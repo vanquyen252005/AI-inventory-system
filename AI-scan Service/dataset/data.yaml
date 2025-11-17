@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 6
+names: ['board', 'chair', 'clock', 'fan', 'project', 'table']
+
+roboflow:
+  workspace: soa-ixotv
+  project: ai-scan-rgfvg
+  version: 3
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/soa-ixotv/ai-scan-rgfvg/dataset/3
