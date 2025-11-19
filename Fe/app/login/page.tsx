@@ -1,29 +1,41 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { Mail, Lock, Eye, EyeOff, ArrowRight } from "lucide-react"
+import { login } from "@/lib/auth-service"
+import { saveAuth } from "@/lib/auth-storage"
 
 export default function LoginPage() {
+  const router = useRouter()
+
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [error, setError] = useState<string | null>(null)
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
+    setError(null)
     setIsLoading(true)
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-    // Lưu auth token vào cookie
-    document.cookie = "auth-token=dummy-token-123; path=/"
-    setIsLoading(false)
-    // Redirect to dashboard
-    window.location.href = "/"
+
+    try {
+      const data = await login(email, password) // gọi qua layer service
+      saveAuth(data) // lưu token + user
+
+      router.push("/") // redirect dashboard/home
+    } catch (err: any) {
+      console.error(err)
+      setError(err.message || "Something went wrong. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -46,14 +58,25 @@ export default function LoginPage() {
               <h1 className="text-2xl font-bold text-foreground">AssetAI</h1>
             </div>
             <h2 className="text-xl font-semibold text-foreground mb-2">Welcome Back</h2>
-            <p className="text-muted-foreground text-sm">Sign in to your account to continue</p>
+            <p className="text-muted-foreground text-sm">
+              Sign in to your account to continue
+            </p>
           </div>
+
+          {/* Error message */}
+          {error && (
+            <div className="mb-4 rounded-md bg-destructive/10 text-destructive text-sm px-3 py-2">
+              {error}
+            </div>
+          )}
 
           {/* Form */}
           <form onSubmit={handleLogin} className="space-y-4">
             {/* Email Field */}
             <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Email Address</label>
+              <label className="text-sm font-medium text-foreground">
+                Email Address
+              </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <Input
@@ -69,7 +92,9 @@ export default function LoginPage() {
 
             {/* Password Field */}
             <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Password</label>
+              <label className="text-sm font-medium text-foreground">
+                Password
+              </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <input
@@ -85,7 +110,11 @@ export default function LoginPage() {
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {showPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
                 </button>
               </div>
             </div>
@@ -93,7 +122,10 @@ export default function LoginPage() {
             {/* Remember & Forgot */}
             <div className="flex items-center justify-between text-sm">
               <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" className="w-4 h-4 rounded border-border" />
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 rounded border-border"
+                />
                 <span className="text-muted-foreground">Remember me</span>
               </label>
               <Link href="#" className="text-primary hover:underline">
@@ -127,13 +159,16 @@ export default function LoginPage() {
               <div className="w-full border-t border-border" />
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-card text-muted-foreground">or continue with</span>
+              <span className="px-2 bg-card text-muted-foreground">
+                or continue with
+              </span>
             </div>
           </div>
 
           {/* Social Login */}
           <div className="grid grid-cols-2 gap-3">
             <Button variant="outline" className="h-10 bg-transparent">
+              {/* Google icon */}
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path
                   fill="currentColor"
@@ -154,6 +189,7 @@ export default function LoginPage() {
               </svg>
             </Button>
             <Button variant="outline" className="h-10 bg-transparent">
+              {/* Meta icon */}
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 0c6.627 0 12 5.373 12 12s-5.373 12-12 12S0 18.627 0 12 5.373 0 12 0zm0 2c5.514 0 10 4.486 10 10s-4.486 10-10 10S2 17.514 2 12 6.486 2 12 2zm3.35 8.75h-2.13v6.541h-2.922v-6.541H8.34v-2.665h2.015V7.079c0-1.622.43-2.6 2.009-2.6.576 0 1.082.043 1.212.062v2.105h-.83c-.655 0-.775.3-.775.744v.975h1.549l-.202 2.375z" />
               </svg>
@@ -162,7 +198,7 @@ export default function LoginPage() {
 
           {/* Sign Up Link */}
           <p className="text-center text-sm text-muted-foreground mt-6">
-            Don't have an account?{" "}
+            Don&apos;t have an account?{" "}
             <Link href="#" className="text-primary font-medium hover:underline">
               Sign up now
             </Link>
