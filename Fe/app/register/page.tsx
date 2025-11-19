@@ -7,29 +7,39 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
-import { Mail, Lock, Eye, EyeOff, ArrowRight } from "lucide-react"
-import { login } from "@/lib/auth-service"
-import { saveAuth } from "@/lib/auth-storage"
+import { Mail, Lock, Eye, EyeOff, User, ArrowRight } from "lucide-react"
+import { register } from "@/lib/auth-service"
 
-export default function LoginPage() {
+export default function RegisterPage() {
   const router = useRouter()
 
-  const [showPassword, setShowPassword] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
+  const [fullName, setFullName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError(null)
+
+    if (password !== confirmPassword) {
+      setError("Password và Confirm password không khớp")
+      return
+    }
+
     setIsLoading(true)
-
     try {
-      const data = await login(email, password) // gọi qua layer service
-      saveAuth(data) // lưu token + user
+      await register({ email, password, fullName })
 
-      router.push("/") // redirect dashboard/home
+      // Có 2 option:
+      // 1) Redirect sang login để user tự đăng nhập
+      // 2) Gọi login() luôn sau khi register để auto login
+      // Ở đây chọn option 1 cho đơn giản:
+      router.push("/login")
     } catch (err: any) {
       console.error(err)
       setError(err.message || "Something went wrong. Please try again.")
@@ -46,7 +56,7 @@ export default function LoginPage() {
         <div className="absolute bottom-20 left-20 w-96 h-96 bg-accent/5 rounded-full blur-3xl" />
       </div>
 
-      {/* Login Card */}
+      {/* Register Card */}
       <div className="w-full max-w-md relative z-10">
         <Card className="p-8 shadow-xl">
           {/* Header */}
@@ -57,9 +67,11 @@ export default function LoginPage() {
               </div>
               <h1 className="text-2xl font-bold text-foreground">AssetAI</h1>
             </div>
-            <h2 className="text-xl font-semibold text-foreground mb-2">Welcome Back</h2>
+            <h2 className="text-xl font-semibold text-foreground mb-2">
+              Create your account
+            </h2>
             <p className="text-muted-foreground text-sm">
-              Sign in to your account to continue
+              Sign up to get started with AssetAI
             </p>
           </div>
 
@@ -71,8 +83,26 @@ export default function LoginPage() {
           )}
 
           {/* Form */}
-          <form onSubmit={handleLogin} className="space-y-4">
-            {/* Email Field */}
+          <form onSubmit={handleRegister} className="space-y-4">
+            {/* Full name */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">
+                Full name
+              </label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Nguyen Van A"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="pl-10 h-11"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Email */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">
                 Email Address
@@ -90,7 +120,7 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Password Field */}
+            {/* Password */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">
                 Password
@@ -119,18 +149,33 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Remember & Forgot */}
-            <div className="flex items-center justify-between text-sm">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="w-4 h-4 rounded border-border"
-                />
-                <span className="text-muted-foreground">Remember me</span>
+            {/* Confirm Password */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">
+                Confirm Password
               </label>
-              <Link href="#" className="text-primary hover:underline">
-                Forgot password?
-              </Link>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full h-11 pl-10 pr-10 border border-border rounded-lg bg-input text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showConfirmPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
             </div>
 
             {/* Submit Button */}
@@ -142,11 +187,11 @@ export default function LoginPage() {
               {isLoading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-                  Signing in...
+                  Creating account...
                 </>
               ) : (
                 <>
-                  Sign In
+                  Sign Up
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -165,7 +210,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Social Login */}
+          {/* Social Register (placeholder) */}
           <div className="grid grid-cols-2 gap-3">
             <Button variant="outline" className="h-10 bg-transparent">
               {/* Google icon */}
@@ -196,18 +241,18 @@ export default function LoginPage() {
             </Button>
           </div>
 
-          {/* Sign Up Link */}
+          {/* Go to login */}
           <p className="text-center text-sm text-muted-foreground mt-6">
-            Don&apos;t have an account?{" "}
-            <Link href="/register" className="text-primary font-medium hover:underline">
-              Sign up now
+            Already have an account?{" "}
+            <Link href="/login" className="text-primary font-medium hover:underline">
+              Sign in
             </Link>
           </p>
         </Card>
 
         {/* Footer */}
         <p className="text-center text-xs text-muted-foreground mt-6">
-          By signing in, you agree to our{" "}
+          By signing up, you agree to our{" "}
           <Link href="#" className="hover:underline">
             Terms of Service
           </Link>{" "}

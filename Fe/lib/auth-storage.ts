@@ -16,8 +16,9 @@ export function saveAuth(data: LoginResponse) {
   localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user))
 
   // cookie (simple) – nếu bạn muốn middleware hoặc server đọc
-  document.cookie = `${ACCESS_TOKEN_KEY}=${accessToken}; path=/`
-  document.cookie = `${REFRESH_TOKEN_KEY}=${refreshToken}; path=/`
+  // Middleware expects "auth-token" cookie name
+  document.cookie = `auth-token=${accessToken}; path=/; max-age=86400` // 24 hours
+  document.cookie = `${REFRESH_TOKEN_KEY}=${refreshToken}; path=/; max-age=604800` // 7 days
 }
 
 export function clearAuth() {
@@ -27,7 +28,7 @@ export function clearAuth() {
   localStorage.removeItem(REFRESH_TOKEN_KEY)
   localStorage.removeItem(CURRENT_USER_KEY)
 
-  document.cookie = `${ACCESS_TOKEN_KEY}=; Max-Age=0; path=/`
+  document.cookie = `auth-token=; Max-Age=0; path=/`
   document.cookie = `${REFRESH_TOKEN_KEY}=; Max-Age=0; path=/`
 }
 

@@ -1,4 +1,5 @@
 // src/lib/auth-service.ts
+
 export interface AuthUser {
   id: string
   email: string
@@ -12,9 +13,24 @@ export interface LoginResponse {
   user: AuthUser
 }
 
+export interface RegisterPayload {
+  email: string
+  password: string
+  fullName?: string
+}
+
+export interface RegisterResponse {
+  id: string
+  email: string
+  fullName?: string
+  role: string
+  createdAt: string
+}
+
 const AUTH_API_URL =
   process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4000"
 
+// ---- LOGIN ----
 export async function login(email: string, password: string): Promise<LoginResponse> {
   const res = await fetch(`${AUTH_API_URL}/auth/login`, {
     method: "POST",
@@ -30,7 +46,7 @@ export async function login(email: string, password: string): Promise<LoginRespo
       const data = await res.json()
       if (data?.message) message = data.message
     } catch {
-      // ignore parse error
+      // ignore
     }
     throw new Error(message)
   }
@@ -39,6 +55,27 @@ export async function login(email: string, password: string): Promise<LoginRespo
   return data
 }
 
-// Optional nếu sau này cần gọi /auth/register, /auth/me, /auth/refresh...
-// export async function register(...) {}
-// export async function getMe(...) {}
+// ---- REGISTER ----
+export async function register(payload: RegisterPayload): Promise<RegisterResponse> {
+  const res = await fetch(`${AUTH_API_URL}/auth/register`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  })
+
+  if (!res.ok) {
+    let message = "Register failed. Please try again."
+    try {
+      const data = await res.json()
+      if (data?.message) message = data.message
+    } catch {
+      // ignore
+    }
+    throw new Error(message)
+  }
+
+  const data = (await res.json()) as RegisterResponse
+  return data
+}
