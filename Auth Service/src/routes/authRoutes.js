@@ -33,10 +33,10 @@ router.post("/login", async (req, res, next) => {
 });
 
 // POST /auth/refresh
-router.post("/refresh", (req, res, next) => {
+router.post("/refresh", async (req, res, next) => {
   try {
     const { refreshToken } = req.body;
-    const result = authService.refresh({ refreshToken });
+    const result = await authService.refresh({ refreshToken });
     return res.json(result);
   } catch (err) {
     next(err);
@@ -44,10 +44,10 @@ router.post("/refresh", (req, res, next) => {
 });
 
 // POST /auth/logout
-router.post("/logout", (req, res, next) => {
+router.post("/logout", async (req, res, next) => {
   try {
     const { refreshToken } = req.body;
-    const result = authService.logout({ refreshToken });
+    const result = await authService.logout({ refreshToken });
     return res.json(result);
   } catch (err) {
     next(err);
