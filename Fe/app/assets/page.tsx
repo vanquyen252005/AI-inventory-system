@@ -5,75 +5,47 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Search, Plus, Filter, Download, Edit2, Trash2, Eye } from "lucide-react"
-import { useState } from "react"
-
-interface Asset {
-  id: string
-  name: string
-  category: string
-  location: string
-  status: "active" | "maintenance" | "inactive"
-  value: number
-  lastScanned?: string
-  condition: number
-}
-
-const assetsList: Asset[] = [
-  {
-    id: "AST-001",
-    name: "Excavator CAT 320",
-    category: "Machinery",
-    location: "Site A",
-    status: "active",
-    value: 125000,
-    lastScanned: "2024-01-15",
-    condition: 92,
-  },
-  {
-    id: "AST-002",
-    name: "Hydraulic Pump",
-    category: "Equipment",
-    location: "Warehouse B",
-    status: "active",
-    value: 45000,
-    lastScanned: "2024-01-10",
-    condition: 78,
-  },
-  {
-    id: "AST-003",
-    name: "Welding Machine",
-    category: "Equipment",
-    location: "Workshop C",
-    status: "maintenance",
-    value: 32000,
-    lastScanned: "2024-01-05",
-    condition: 65,
-  },
-  {
-    id: "AST-004",
-    name: "Power Generator",
-    category: "Equipment",
-    location: "Storage D",
-    status: "inactive",
-    value: 28000,
-    lastScanned: "2023-12-20",
-    condition: 45,
-  },
-  {
-    id: "AST-005",
-    name: "Toolset Pro",
-    category: "Tools",
-    location: "Workshop C",
-    status: "active",
-    value: 8500,
-    lastScanned: "2024-01-12",
-    condition: 88,
-  },
-]
+import { useState, useEffect } from "react"
+import { AssetFormDialog } from "@/components/asset-form-dialog"
+import { getAssets, type Asset } from "@/lib/inventory-service"
 
 export default function AssetsPage() {
   const [searchTerm, setSearchTerm] = useState("")
-  const [assets, setAssets] = useState(assetsList)
+  const [assets, setAssets] = useState<Asset[]>([])
+  const [loading, setLoading] = useState(true)
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  // Fetch assets from API
+  useEffect(() => {
+    loadAssets()
+  }, [])
+
+  const loadAssets = async () => {
+    try {
+      setLoading(true)
+      const response = await getAssets({ limit: 100 })
+      setAssets(response.assets)
+    } catch (error) {
+      console.error("Failed to load assets:", error)
+      
+      // Check if it's an auth error
+      if (error instanceof Error && error.message.includes("token")) {
+        console.error("💡 Token issue detected. Try:")
+        console.error("   1. Check JWT_ACCESS_SECRET matches in both services")
+        console.error("   2. Login again to get a new token")
+        console.error("   3. Run testToken() in console to debug")
+      }
+      
+      // Fallback to empty array on error
+      setAssets([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleAssetCreated = () => {
+    loadAssets() // Refresh the list
+  }
 
   const getStatusColor = (status: Asset["status"]) => {
     switch (status) {
@@ -107,7 +79,10 @@ export default function AssetsPage() {
             <h1 className="text-3xl font-bold text-foreground mb-2">Asset Inventory</h1>
             <p className="text-muted-foreground">Manage and track all your assets</p>
           </div>
-          <Button className="bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2">
+          <Button
+            onClick={() => setDialogOpen(true)}
+            className="bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2"
+          >
             <Plus className="w-5 h-5" />
             Add Asset
           </Button>
@@ -139,21 +114,32 @@ export default function AssetsPage() {
         {/* Assets Table */}
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border bg-muted/50">
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Asset ID</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Name</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Category</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Location</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Status</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Condition</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Value</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredAssets.map((asset) => (
+            {loading ? (
+              <div className="p-12 text-center">
+                <p className="text-muted-foreground">Loading assets...</p>
+              </div>
+            ) : filteredAssets.length === 0 ? (
+              <div className="p-12 text-center">
+                <p className="text-muted-foreground">
+                  {searchTerm ? "No assets found matching your search." : "No assets yet. Create your first asset!"}
+                </p>
+              </div>
+            ) : (
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border bg-muted/50">
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Asset ID</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Name</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Category</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Location</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Status</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Condition</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Value</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAssets.map((asset) => (
                   <tr key={asset.id} className="border-b border-border hover:bg-muted/30 transition-colors">
                     <td className="px-6 py-4 text-sm font-medium text-primary">{asset.id}</td>
                     <td className="px-6 py-4 text-sm font-medium text-foreground">{asset.name}</td>
@@ -192,9 +178,10 @@ export default function AssetsPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
 
           {/* Pagination */}
@@ -212,6 +199,13 @@ export default function AssetsPage() {
             </div>
           </div>
         </Card>
+
+        {/* Add Asset Dialog */}
+        <AssetFormDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          onSuccess={handleAssetCreated}
+        />
       </div>
     </AppLayout>
   )

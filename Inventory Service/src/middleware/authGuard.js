@@ -24,7 +24,9 @@ function authGuard(requiredRoles = []) {
 
       next();
     } catch (err) {
-      console.error(err);
+      console.error("JWT verification error:", err.message);
+      console.error("Token (first 20 chars):", token.substring(0, 20));
+      console.error("Using secret:", accessSecret ? "***" + accessSecret.slice(-4) : "NOT SET");
       return res.status(401).json({ message: "Invalid or expired token" });
     }
   };

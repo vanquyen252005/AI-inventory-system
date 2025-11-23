@@ -47,11 +47,15 @@ PORT=4001
 DATABASE_URL=postgresql://user:password@localhost:5432/inventory_db
 # Hoặc sử dụng Neon DB (cùng connection string với Auth Service):
 # DATABASE_URL=postgresql://user:password@ep-xxx.region.aws.neon.tech/dbname?sslmode=require
+
+# QUAN TRỌNG: Phải dùng CÙNG JWT_ACCESS_SECRET với Auth Service
 JWT_ACCESS_SECRET=access_secret
 UPLOAD_PATH=./uploads
 ```
 
 > **Lưu ý:** Inventory Service sử dụng **chung database** với Auth Service. Migration chỉ thêm các bảng mới (assets, scans, detections), không ảnh hưởng bảng cũ.
+
+> **⚠️ QUAN TRỌNG:** `JWT_ACCESS_SECRET` phải **GIỐNG HỆT** với Auth Service. Nếu không, token sẽ không verify được!
 
 3. Chạy migrations để thêm các bảng mới vào database:
 
@@ -112,6 +116,8 @@ Authorization: Bearer <token>
 
 Token được lấy từ Auth Service sau khi login.
 
+**⚠️ Lưu ý:** Cả Auth Service và Inventory Service phải dùng **CÙNG** `JWT_ACCESS_SECRET` trong `.env` file!
+
 ## Database Schema
 
 ### assets
@@ -142,3 +148,24 @@ Token được lấy từ Auth Service sau khi login.
 - Max file size: 500MB
 - Files được lưu trong thư mục `./uploads` (có thể config qua `UPLOAD_PATH`)
 
+## Troubleshooting
+
+### Lỗi "Invalid or expired token"
+
+1. **Kiểm tra JWT_ACCESS_SECRET:**
+   - Đảm bảo cả Auth Service và Inventory Service dùng **CÙNG** giá trị `JWT_ACCESS_SECRET`
+   - Restart cả 2 services sau khi thay đổi `.env`
+
+2. **Kiểm tra token:**
+   - Mở browser console (F12)
+   - Kiểm tra xem token có được lưu trong localStorage không: `localStorage.getItem('accessToken')`
+   - Token phải bắt đầu với `eyJ` (JWT format)
+
+3. **Kiểm tra request:**
+   - Mở Network tab trong browser
+   - Xem request có header `Authorization: Bearer <token>` không
+   - Kiểm tra response status code
+
+4. **Kiểm tra logs:**
+   - Xem logs của Inventory Service để thấy lỗi chi tiết
+   - Logs sẽ hiển thị lỗi JWT verification nếu có

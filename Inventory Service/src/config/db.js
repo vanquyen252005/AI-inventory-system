@@ -1,8 +1,22 @@
 // src/config/db.js
+// Load dotenv first to ensure .env is loaded
+require("dotenv").config();
 const { Pool } = require("pg");
 
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  console.error("❌ DATABASE_URL is not set!");
+  process.exit(1);
+}
+
+// Log connection info (first 30 and last 20 chars for security)
+const preview = connectionString.length > 50 
+  ? connectionString.substring(0, 30) + "..." + connectionString.slice(-20)
+  : "***";
+console.log(`[DB] Connecting to: ${preview}`);
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: connectionString,
   // optional:
   ssl: {
     rejectUnauthorized: false,
