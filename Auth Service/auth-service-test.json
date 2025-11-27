@@ -1,0 +1,186 @@
+{
+	"info": {
+		"name": "Auth Service Automated Test Suite",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Register New User",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"// Tạo email ngẫu nhiên để tránh lỗi trùng lặp",
+							"const randomId = Math.floor(Math.random() * 100000);",
+							"pm.collectionVariables.set(\"test_email\", `auth_tester_${randomId}@example.com`);",
+							"pm.collectionVariables.set(\"test_password\", \"123456\");",
+							"console.log(\"Generated Email: \" + pm.collectionVariables.get(\"test_email\"));"
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Register Success (201)\", function () {",
+							"    pm.response.to.have.status(201);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\": \"{{test_email}}\",\n    \"password\": \"{{test_password}}\",\n    \"fullName\": \"Automated Auth Tester\"\n}"
+				},
+				"url": "http://localhost:4000/auth/register"
+			}
+		},
+		{
+			"name": "2. Login",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Login Success (200)\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"var jsonData = pm.response.json();",
+							"// Kiểm tra có trả về token không",
+							"pm.test(\"Has Access & Refresh Token\", function () {",
+							"    pm.expect(jsonData).to.have.property('accessToken');",
+							"    pm.expect(jsonData).to.have.property('refreshToken');",
+							"});",
+							"",
+							"// Lưu token vào biến môi trường",
+							"if (jsonData.accessToken) {",
+							"    pm.environment.set(\"accessToken\", jsonData.accessToken);",
+							"    pm.environment.set(\"refreshToken\", jsonData.refreshToken);",
+							"    console.log(\"Tokens acquired successfully\");",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\": \"{{test_email}}\",\n    \"password\": \"{{test_password}}\"\n}"
+				},
+				"url": "http://localhost:4000/auth/login"
+			}
+		},
+		{
+			"name": "3. Get Profile (Protected)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Get Profile Success (200)\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"var jsonData = pm.response.json();",
+							"pm.test(\"Email matches\", function () {",
+							"    pm.expect(jsonData.email).to.eql(pm.collectionVariables.get(\"test_email\"));",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{ "key": "token", "value": "{{accessToken}}", "type": "string" }
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": "http://localhost:4000/auth/me"
+			}
+		},
+		{
+			"name": "4. Refresh Token",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Refresh Success (200)\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"var jsonData = pm.response.json();",
+							"pm.test(\"New Access Token received\", function () {",
+							"    pm.expect(jsonData).to.have.property('accessToken');",
+							"    // Cập nhật token mới để dùng tiếp nếu cần",
+							"    pm.environment.set(\"accessToken\", jsonData.accessToken);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"refreshToken\": \"{{refreshToken}}\"\n}"
+				},
+				"url": "http://localhost:4000/auth/refresh"
+			}
+		},
+		{
+			"name": "5. Logout",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Logout Success (200)\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"refreshToken\": \"{{refreshToken}}\"\n}"
+				},
+				"url": "http://localhost:4000/auth/logout"
+			}
+		}
+	],
+	"variable": [
+		{ "key": "test_email", "value": "" },
+		{ "key": "test_password", "value": "" }
+	]
+}
