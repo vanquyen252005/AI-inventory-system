@@ -8,22 +8,22 @@ MODEL_PATH = "runs/detect/train2/weights/best.pt"
 JSON_OUT = "object_counting_output.json"
 VIDEO_OUT = "object_counting_output.mp4"  # gợi ý dùng .mp4 nếu fourcc = mp4v
 
-# --- Open video ---
+
 cap = cv2.VideoCapture(VIDEO_IN)
 assert cap.isOpened(), f"Error reading video file: {VIDEO_IN}"
 
-# Định nghĩa vùng (line hoặc polygon). Ở đây là polygon 4 đỉnh:
-region_points = [[1853, 44], [1879, 1024], [29, 1013], [13, 24]]
-# (XÓA dòng list thừa trước đó nếu có)
 
-# --- Video writer ---
+region_points = [[1853, 44], [1879, 1024], [29, 1013], [13, 24]]
+
+
+
 w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 fps = cap.get(cv2.CAP_PROP_FPS) or 30
 fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 video_writer = cv2.VideoWriter(VIDEO_OUT, fourcc, fps, (w, h))
 
-# --- ObjectCounter ---
+
 counter = solutions.ObjectCounter(
     show=True,
     region=region_points,
@@ -32,7 +32,7 @@ counter = solutions.ObjectCounter(
     # tracker="botsort.yaml" # hoặc "bytetrack.yaml"
 )
 
-# --- Thu thập JSON theo từng frame ---
+
 frames_json = []
 frame_idx = 0
 
@@ -42,11 +42,9 @@ while cap.isOpened():
         print("Video frame is empty or processing is complete.")
         break
 
-    # Gọi counter -> trả SolutionResults (plot_im + các số liệu count)
     results = counter(im0)  # alias của process()
 
-    # Lấy danh sách đối tượng ở frame hiện tại từ counter.*
-    # (counter.boxes, counter.track_ids, counter.clss, counter.confs được set trong process)
+
     objects = []
     names = getattr(counter, "names", None) or {}
     for box, tid, cls, conf in zip(counter.boxes, counter.track_ids, counter.clss, counter.confs):
@@ -61,7 +59,7 @@ while cap.isOpened():
             "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
         })
 
-    # Ghi JSON cho frame hiện tại
+
     frames_json.append({
         "frame_index": frame_idx,
         "timestamp_sec": round(frame_idx / float(fps), 3),
@@ -72,24 +70,24 @@ while cap.isOpened():
         "objects": objects
     })
 
-    # Ghi video frame đã vẽ bbox/region
+
     video_writer.write(results.plot_im)
 
     frame_idx += 1
 
-# --- Kết thúc: tổng hợp & lưu JSON ---
-summary = {
-    "final_in_count": int(counter.in_count),
-    "final_out_count": int(counter.out_count),
-    "final_classwise_count": counter.classwise_count  # dict(str -> {"IN":..,"OUT":..})
-}
+simple_counts = {}
+
+for label, counts in counter.classwise_count.items():
+    in_cnt = counts.get("IN", 0)
+    out_cnt = counts.get("OUT", 0)
+    total = in_cnt + out_cnt
+    simple_counts[label] = total
+
 
 output = {
-    "video": {"path": os.path.abspath(VIDEO_IN), "width": w, "height": h, "fps": fps},
+    "video": os.path.abspath(VIDEO_IN),
     "model": os.path.abspath(MODEL_PATH),
-    "region": region_points,
-    "frames": frames_json,
-    "summary": summary
+    "objects": simple_counts
 }
 
 with open(JSON_OUT, "w", encoding="utf-8") as f:
