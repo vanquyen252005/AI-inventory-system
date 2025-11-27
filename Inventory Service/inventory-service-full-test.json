@@ -1,0 +1,263 @@
+{
+	"info": {
+		"name": "Full Inventory Service Test Suite (Fixed V2)",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "0. Setup (Auth)",
+			"item": [
+				{
+					"name": "Register New User",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// Tạo email ngẫu nhiên để tránh lỗi trùng lặp",
+									"const randomId = Math.floor(Math.random() * 100000);",
+									"pm.collectionVariables.set(\"test_email\", `tester_${randomId}@example.com`);",
+									"pm.collectionVariables.set(\"test_password\", \"123456\");",
+									"console.log(\"Generated Email: \" + pm.collectionVariables.get(\"test_email\"));"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Register Success\", function () {",
+									"    // Chấp nhận 201 (Tạo mới) hoặc 409 (Đã tồn tại)",
+									"    pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"{{test_email}}\",\n    \"password\": \"{{test_password}}\",\n    \"fullName\": \"Automated Tester\"\n}"
+						},
+						"url": "http://localhost:4000/auth/register"
+					}
+				},
+				{
+					"name": "Login to Get Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Login Success\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if (jsonData.accessToken) {",
+									"    pm.environment.set(\"accessToken\", jsonData.accessToken);",
+									"    console.log(\"Got Token Successfully\");",
+									"} else {",
+									"    console.error(\"Login Failed: No Token Received\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"{{test_email}}\",\n    \"password\": \"{{test_password}}\"\n}"
+						},
+						"url": "http://localhost:4000/auth/login"
+					}
+				}
+			]
+		},
+		{
+			"name": "1. Assets Management",
+			"item": [
+				{
+					"name": "Create Asset",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Created (201)\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"// Lưu ID để dùng cho các bước sau",
+									"if(jsonData.id) {",
+									"    pm.environment.set(\"assetId\", jsonData.id);",
+									"} else if (jsonData._id) {",
+									"     pm.environment.set(\"assetId\", jsonData._id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+						},
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Dell XPS 15 Test\",\n    \"category\": \"Laptop\",\n    \"status\": \"active\",\n    \"location\": \"Warehouse A\"\n}"
+						},
+						"url": "http://localhost:4001/api/v1/assets"
+					}
+				},
+				{
+					"name": "Get All Assets (Pagination)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });",
+									"pm.test(\"Has Assets Array\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    // API trả về 'assets', không phải 'data'",
+									"    pm.expect(jsonData.assets).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+						},
+						"method": "GET",
+						"url": "http://localhost:4001/api/v1/assets?page=1&limit=5"
+					}
+				},
+				{
+					"name": "Get Asset Detail",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+						},
+						"method": "GET",
+						"url": "http://localhost:4001/api/v1/assets/{{assetId}}"
+					}
+				},
+				{
+					"name": "Update Asset",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+						},
+						"method": "PUT",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"maintenance\",\n    \"location\": \"Repair Shop\"\n}"
+						},
+						"url": "http://localhost:4001/api/v1/assets/{{assetId}}"
+					}
+				},
+				{
+					"name": "Delete Asset",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+						},
+						"method": "DELETE",
+						"url": "http://localhost:4001/api/v1/assets/{{assetId}}"
+					}
+				}
+			]
+		},
+		{
+			"name": "2. Scans (V1 & V2)",
+			"item": [
+				{
+					"name": "Get Scans V1",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+						},
+						"method": "GET",
+						"url": "http://localhost:4001/api/v1/scans"
+					}
+				},
+				{
+					"name": "Get Scans V2",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+						},
+						"method": "GET",
+						"url": "http://localhost:4001/api/v2/scans"
+					}
+				}
+			]
+		},
+		{
+			"name": "3. Reports",
+			"item": [
+				{
+					"name": "Get Report Summary",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+						},
+						"method": "GET",
+						"url": "http://localhost:4001/api/v1/reports/summary"
+					}
+				},
+				{
+					"name": "Get Report Trends",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+						},
+						"method": "GET",
+						"url": "http://localhost:4001/api/v1/reports/trends"
+					}
+				}
+			]
+		}
+	],
+	"variable": [
+		{ "key": "test_email", "value": "" },
+		{ "key": "test_password", "value": "" }
+	]
+}

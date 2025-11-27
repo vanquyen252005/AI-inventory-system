@@ -6,7 +6,8 @@ const logger = require("./config/logger"); // Logger
 const apiLimiter = require("./middleware/rateLimiter"); // Rate limit
 const { metricsMiddleware, metricsEndpoint } = require("./middleware/monitoring"); // Monitoring
 const deprecationWarning = require("./middleware/deprecation"); // Middleware cảnh báo
-
+const swaggerUi = require("swagger-ui-express");
+const swaggerSpecs = require("./config/swagger");
 // Import Routes
 const assetRoutes = require("./routes/assetRoutes");
 const scanRoutes = require("./routes/scanRoutes"); // Route v1 (Cũ)
@@ -39,7 +40,7 @@ app.use((req, res, next) => {
 
 // Routes Metrics
 app.get('/metrics', metricsEndpoint);
-
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 // --- CHIẾN LƯỢC VERSIONING (QUAN TRỌNG) ---
 
 // Group 1: API v1 (Sắp bỏ - Deprecated)
