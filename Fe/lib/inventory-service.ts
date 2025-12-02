@@ -1,5 +1,8 @@
-// lib/inventory-service.ts
-import { getAccessToken } from "./auth-storage"
+import { fetchWithAuth } from "./api-client" // Import wrapper
+
+// Removed: import { getAccessToken } from "./auth-storage" 
+// Removed: getAuthToken() helper
+// Removed: fetchWithAuth() helper (the internal one)
 
 export interface Asset {
   id: string
@@ -33,50 +36,6 @@ export interface AssetsResponse {
 const INVENTORY_API_URL =
   process.env.NEXT_PUBLIC_INVENTORY_API_URL || "http://localhost:4001"
 
-// Get auth token from storage
-function getAuthToken(): string | null {
-  return getAccessToken()
-}
-
-// Helper to make authenticated requests
-async function fetchWithAuth(url: string, options: RequestInit = {}) {
-  const token = getAuthToken()
-  
-  if (!token) {
-    throw new Error("No authentication token found. Please login first.")
-  }
-
-  const headers: HeadersInit = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
-    ...options.headers,
-  }
-
-  const res = await fetch(url, {
-    ...options,
-    headers,
-  })
-
-  if (!res.ok) {
-    let message = "Request failed"
-    try {
-      const data = await res.json()
-      if (data?.message) message = data.message
-    } catch {
-      // ignore
-    }
-    
-    // If unauthorized, might be token issue
-    if (res.status === 401) {
-      console.error("Authentication failed. Token:", token.substring(0, 20) + "...")
-    }
-    
-    throw new Error(message)
-  }
-
-  return res.json()
-}
-
 // ---- ASSETS ----
 export async function getAssets(params?: {
   search?: string
@@ -93,6 +52,8 @@ export async function getAssets(params?: {
   if (params?.limit) queryParams.append("limit", params.limit.toString())
 
   const url = `${INVENTORY_API_URL}/assets?${queryParams.toString()}`
+  
+  // Use new wrapper
   return fetchWithAuth(url)
 }
 
@@ -107,19 +68,15 @@ export async function createAsset(payload: CreateAssetPayload): Promise<Asset> {
   })
 }
 
-export async function updateAsset(
-  id: string,
-  payload: Partial<CreateAssetPayload>
-): Promise<Asset> {
+export async function updateAsset(id: string, payload: any) {
   return fetchWithAuth(`${INVENTORY_API_URL}/assets/${id}`, {
     method: "PUT",
     body: JSON.stringify(payload),
   })
 }
 
-export async function deleteAsset(id: string): Promise<void> {
-  await fetchWithAuth(`${INVENTORY_API_URL}/assets/${id}`, {
+export async function deleteAsset(id: string) {
+  return fetchWithAuth(`${INVENTORY_API_URL}/assets/${id}`, {
     method: "DELETE",
   })
 }
-

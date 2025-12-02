@@ -3,12 +3,9 @@
 import { AppLayout } from "@/components/layout/app-layout"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
   BarChart,
   Bar,
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -19,167 +16,191 @@ import {
   Pie,
   Cell,
 } from "recharts"
-import { Download, Filter, Calendar } from "lucide-react"
+import { Download, Printer, RefreshCcw, DollarSign, Wrench, Package, Scan } from "lucide-react"
+import { useEffect, useState } from "react"
+import { getSummary, getTrends, getDistribution, type SummaryStats, type ChartData, type DistributionData } from "@/lib/report-service"
 
-const monthlyData = [
-  { month: "Jan", scans: 24, issues: 8, resolved: 6 },
-  { month: "Feb", scans: 35, issues: 12, resolved: 10 },
-  { month: "Mar", scans: 42, issues: 14, resolved: 13 },
-  { month: "Apr", scans: 55, issues: 18, resolved: 16 },
-  { month: "May", scans: 68, issues: 22, resolved: 20 },
-  { month: "Jun", scans: 82, issues: 25, resolved: 23 },
-]
-
-const issueDistribution = [
-  { name: "Hydraulic Issues", value: 35 },
-  { name: "Wear & Tear", value: 28 },
-  { name: "Rust/Corrosion", value: 20 },
-  { name: "Other", value: 17 },
-]
-
-const COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)"]
+const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"]
 
 export default function ReportsPage() {
+  const [summary, setSummary] = useState<SummaryStats | null>(null)
+  const [trends, setTrends] = useState<ChartData[]>([])
+  const [distribution, setDistribution] = useState<DistributionData[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const loadData = async () => {
+    try {
+      setLoading(true)
+      const [summaryData, trendsData, distData] = await Promise.all([
+        getSummary(),
+        getTrends(),
+        getDistribution()
+      ])
+      
+      setSummary(summaryData)
+      setTrends(trendsData)
+      setDistribution(distData)
+    } catch (error) {
+      console.error("Lỗi tải báo cáo:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Format tiền tệ VNĐ
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(value)
+  }
+
   return (
     <AppLayout>
-      <div className="p-8 max-w-7xl mx-auto">
+      <div className="p-8 max-w-7xl mx-auto space-y-8">
         {/* Header */}
-        <div className="flex justify-between items-start mb-8">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-foreground mb-2">Reports & Analytics</h1>
-            <p className="text-muted-foreground">Comprehensive analysis of your asset scanning data</p>
+            <h1 className="text-3xl font-bold text-foreground">Báo cáo Thống kê</h1>
+            <p className="text-muted-foreground mt-1">Tổng hợp số liệu tài sản và hoạt động kiểm kê AI</p>
           </div>
-          <Button className="bg-primary hover:bg-primary/90 flex items-center gap-2">
-            <Download className="w-5 h-5" />
-            Export Report
-          </Button>
-        </div>
-
-        {/* Filters */}
-        <Card className="p-6 mb-6">
-          <div className="flex gap-4 flex-wrap">
-            <div className="flex-1 min-w-64 relative">
-              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-              <Input type="date" className="pl-10" />
-            </div>
-            <div className="flex-1 min-w-64 relative">
-              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-              <Input type="date" className="pl-10" />
-            </div>
-            <Button variant="outline" className="flex items-center gap-2 bg-transparent">
-              <Filter className="w-5 h-5" />
-              Filter
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={loadData} disabled={loading}>
+              <RefreshCcw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> 
+              Cập nhật
+            </Button>
+            <Button className="bg-primary hover:bg-primary/90">
+              <Download className="w-4 h-4 mr-2" />
+              Xuất Excel
             </Button>
           </div>
-        </Card>
+        </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="p-6">
-            <h3 className="text-sm text-muted-foreground mb-2">Total Scans</h3>
-            <p className="text-3xl font-bold text-primary mb-2">306</p>
-            <p className="text-xs text-accent">+15% from last period</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <Card className="p-6 border-l-4 border-l-blue-500 shadow-sm">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-blue-100 rounded-full text-blue-600">
+                <Package className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Tổng tài sản</p>
+                <h3 className="text-2xl font-bold">{summary?.totalAssets || 0}</h3>
+              </div>
+            </div>
           </Card>
-          <Card className="p-6">
-            <h3 className="text-sm text-muted-foreground mb-2">Issues Found</h3>
-            <p className="text-3xl font-bold text-orange-600 mb-2">99</p>
-            <p className="text-xs text-orange-600">23 pending review</p>
+
+          <Card className="p-6 border-l-4 border-l-green-500 shadow-sm">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-green-100 rounded-full text-green-600">
+                <DollarSign className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Tổng giá trị</p>
+                <h3 className="text-xl font-bold truncate max-w-[150px]" title={formatCurrency(summary?.totalValue || 0)}>
+                  {summary ? (summary.totalValue / 1000000).toFixed(0) : 0} Tr
+                </h3>
+              </div>
+            </div>
           </Card>
-          <Card className="p-6">
-            <h3 className="text-sm text-muted-foreground mb-2">Resolved</h3>
-            <p className="text-3xl font-bold text-green-600 mb-2">88</p>
-            <p className="text-xs text-green-600">89% resolution rate</p>
+
+          <Card className="p-6 border-l-4 border-l-purple-500 shadow-sm">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-purple-100 rounded-full text-purple-600">
+                <Scan className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Lượt quét AI</p>
+                <h3 className="text-2xl font-bold">{summary?.totalScans || 0}</h3>
+              </div>
+            </div>
           </Card>
-          <Card className="p-6">
-            <h3 className="text-sm text-muted-foreground mb-2">Avg Accuracy</h3>
-            <p className="text-3xl font-bold text-blue-600 mb-2">93.4%</p>
-            <p className="text-xs text-blue-600">Excellent detection</p>
+
+          <Card className="p-6 border-l-4 border-l-orange-500 shadow-sm">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-orange-100 rounded-full text-orange-600">
+                <Wrench className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Cần bảo trì</p>
+                <h3 className="text-2xl font-bold">{summary?.maintenanceCount || 0}</h3>
+              </div>
+            </div>
           </Card>
         </div>
 
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <Card className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Scans & Issues Trend</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={monthlyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis stroke="var(--muted-foreground)" />
-                <YAxis stroke="var(--muted-foreground)" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "var(--card)",
-                    border: "1px solid var(--border)",
-                    color: "var(--foreground)",
-                  }}
-                />
-                <Legend />
-                <Bar dataKey="scans" fill="var(--chart-1)" />
-                <Bar dataKey="issues" fill="var(--chart-2)" />
-              </BarChart>
-            </ResponsiveContainer>
-          </Card>
-
-          <Card className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Resolution Rate</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={monthlyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis stroke="var(--muted-foreground)" />
-                <YAxis stroke="var(--muted-foreground)" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "var(--card)",
-                    border: "1px solid var(--border)",
-                    color: "var(--foreground)",
-                  }}
-                />
-                <Legend />
-                <Line type="monotone" dataKey="resolved" stroke="var(--chart-3)" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </Card>
-        </div>
-
-        {/* Issue Distribution */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Issue Distribution</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie data={issueDistribution} cx="50%" cy="50%" innerRadius={60} outerRadius={100} dataKey="value">
-                  {issueDistribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "var(--card)",
-                    border: "1px solid var(--border)",
-                    color: "var(--foreground)",
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </Card>
-
-          <Card className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Top Issues by Frequency</h3>
-            <div className="space-y-4">
-              {issueDistribution.map((issue, index) => (
-                <div key={index}>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-foreground font-medium">{issue.name}</span>
-                    <span className="text-muted-foreground">{issue.value}</span>
-                  </div>
-                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-linear-to-r from-primary to-accent"
-                      style={{ width: `${(issue.value / 35) * 100}%` }}
+        {/* Charts Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          
+          {/* Chart 1: Hoạt động quét theo tháng */}
+          <Card className="p-6 shadow-sm">
+            <h3 className="text-lg font-semibold mb-6">Tần suất Quét AI (6 tháng qua)</h3>
+            <div className="h-[300px] w-full">
+              {trends.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={trends}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="month" />
+                    <YAxis allowDecimals={false} />
+                    <Tooltip 
+                      cursor={{ fill: 'transparent' }}
+                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
                     />
-                  </div>
+                    <Bar dataKey="scans" name="Lượt quét" fill="#8884d8" radius={[4, 4, 0, 0]} barSize={40} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-muted-foreground">
+                  Chưa có dữ liệu quét
                 </div>
-              ))}
+              )}
+            </div>
+          </Card>
+
+          {/* Chart 2: Phân bố loại tài sản */}
+          <Card className="p-6 shadow-sm">
+            <h3 className="text-lg font-semibold mb-6">Phân bố Tài sản theo Danh mục</h3>
+            <div className="h-[300px] w-full flex flex-col md:flex-row items-center">
+              {distribution.length > 0 ? (
+                <>
+                  <div className="flex-1 h-full min-w-[200px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={distribution}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={90}
+                          paddingAngle={5}
+                          dataKey="value"
+                        >
+                          {distribution.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="w-full md:w-48 space-y-3 mt-4 md:mt-0">
+                    {distribution.map((item, index) => (
+                      <div key={index} className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                          <span className="truncate max-w-[100px]" title={item.name}>{item.name}</span>
+                        </div>
+                        <span className="font-semibold">{item.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="h-full w-full flex items-center justify-center text-muted-foreground">
+                  Chưa có dữ liệu tài sản
+                </div>
+              )}
             </div>
           </Card>
         </div>

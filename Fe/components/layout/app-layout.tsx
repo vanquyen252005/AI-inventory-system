@@ -15,10 +15,10 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { name: "Dashboard", href: "/", icon: <BarChart3 className="w-5 h-5" /> },
-  { name: "Assets", href: "/assets", icon: <Package className="w-5 h-5" /> },
-  { name: "AI Scans", href: "/scans", icon: <Video className="w-5 h-5" /> },
-  { name: "Reports", href: "/reports", icon: <FileText className="w-5 h-5" /> },
+  { name: "Tổng quan", href: "/", icon: <BarChart3 className="w-5 h-5" /> },
+  { name: "Tài sản", href: "/assets", icon: <Package className="w-5 h-5" /> },
+  { name: "Quét AI", href: "/scans", icon: <Video className="w-5 h-5" /> },
+  { name: "Báo cáo", href: "/reports", icon: <FileText className="w-5 h-5" /> },
 ]
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -37,9 +37,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="mb-8">
             <h1 className="text-2xl font-bold text-sidebar-primary flex items-center gap-2">
               <div className="w-8 h-8 bg-gradient-to-br from-sidebar-primary to-sidebar-accent rounded-lg flex items-center justify-center">
-                <span className="text-sidebar-primary-foreground text-sm font-black">AI</span>
+                <span className="text-sidebar-primary-foreground text-sm font-black">UET</span>
               </div>
-              AssetAI
+              UET Assets
             </h1>
           </div>
 
@@ -72,7 +72,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               className="flex items-center gap-3 px-4 py-3 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent/20 w-full transition-colors"
             >
               <LogOut className="w-5 h-5" />
-              <span className="font-medium">Logout</span>
+              <span className="font-medium">Đăng xuất</span>
             </button>
           </form>
         </div>
@@ -87,7 +87,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </button>
           <div className="flex-1" />
           <div className="flex items-center gap-4">
-            <div className="text-sm text-muted-foreground">Welcome back</div>
+            <div className="text-sm text-muted-foreground">Xin chào, Admin</div>
             <div className="w-10 h-10 bg-gradient-to-br from-primary to-accent rounded-full" />
           </div>
         </header>

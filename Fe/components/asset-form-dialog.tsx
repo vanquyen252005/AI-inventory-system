@@ -1,20 +1,33 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { createAsset, type CreateAssetPayload } from "@/lib/inventory-service"
+import { createAsset, updateAsset, type CreateAssetPayload, type Asset } from "@/lib/inventory-service"
+
+const LECTURE_HALLS = [
+  { id: "G2", name: "Giảng đường G2" },
+  { id: "GD2", name: "Giảng đường 2 (GD2)" },
+  { id: "GD3", name: "Giảng đường 3 (GD3)" },
+  { id: "GD4", name: "Giảng đường 4 (GD4)" },
+  { id: "OTHER", name: "Khu vực khác" }
+]
 
 interface AssetFormDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess: () => void
+  assetToEdit?: Asset | null // Thêm prop này để nhận dữ liệu cần sửa
 }
 
-export function AssetFormDialog({ open, onOpenChange, onSuccess }: AssetFormDialogProps) {
+export function AssetFormDialog({ open, onOpenChange, onSuccess, assetToEdit }: AssetFormDialogProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  
+  const [selectedHall, setSelectedHall] = useState("G2")
+  const [roomNumber, setRoomNumber] = useState("")
+
   const [formData, setFormData] = useState<CreateAssetPayload>({
     name: "",
     category: "",
@@ -25,39 +38,94 @@ export function AssetFormDialog({ open, onOpenChange, onSuccess }: AssetFormDial
     description: "",
   })
 
+  // Effect: Khi mở dialog, nếu có assetToEdit thì điền dữ liệu vào form
+  useEffect(() => {
+    if (open) {
+      if (assetToEdit) {
+        // Chế độ SỬA: Parse dữ liệu cũ
+        setFormData({
+          name: assetToEdit.name,
+          category: assetToEdit.category,
+          location: assetToEdit.location,
+          status: assetToEdit.status,
+          value: assetToEdit.value,
+          condition: assetToEdit.condition,
+          description: assetToEdit.description || "",
+        })
+
+        // Logic tách chuỗi Location: "GD2 - 201" -> Hall: GD2, Room: 201
+        const parts = assetToEdit.location.split(" - ")
+        const foundHall = LECTURE_HALLS.find(h => h.id === parts[0])
+        
+        if (foundHall && parts.length > 1) {
+          setSelectedHall(foundHall.id)
+          setRoomNumber(parts.slice(1).join(" - ")) // Ghép phần còn lại nếu có
+        } else {
+          setSelectedHall("OTHER")
+          setRoomNumber(assetToEdit.location)
+        }
+      } else {
+        // Chế độ THÊM MỚI: Reset form
+        setFormData({
+          name: "",
+          category: "",
+          location: "",
+          status: "active",
+          value: 0,
+          condition: 100,
+          description: "",
+        })
+        setSelectedHall("G2")
+        setRoomNumber("")
+      }
+      setError(null)
+    }
+  }, [open, assetToEdit])
+
+  // Cập nhật location khi hall/room thay đổi
+  useEffect(() => {
+    if (selectedHall === "OTHER") {
+      setFormData(prev => ({ ...prev, location: roomNumber }))
+    } else {
+      setFormData(prev => ({ ...prev, location: `${selectedHall} - ${roomNumber}` }))
+    }
+  }, [selectedHall, roomNumber])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     setLoading(true)
 
     try {
-      await createAsset(formData)
+      if (assetToEdit) {
+        // Gọi API Update
+        await updateAsset(assetToEdit.id, formData)
+      } else {
+        // Gọi API Create
+        await createAsset(formData)
+      }
+      
       onSuccess()
       onOpenChange(false)
-      // Reset form
-      setFormData({
-        name: "",
-        category: "",
-        location: "",
-        status: "active",
-        value: 0,
-        condition: 100,
-        description: "",
-      })
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create asset")
+      console.error(err)
+      setError(err instanceof Error ? err.message : "Có lỗi xảy ra")
     } finally {
       setLoading(false)
     }
   }
 
+  const isEditMode = !!assetToEdit
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-2xl">
         <DialogClose onClose={() => onOpenChange(false)} />
         <DialogHeader>
-          <DialogTitle>Add New Asset</DialogTitle>
-          <DialogDescription>Enter the details for the new asset</DialogDescription>
+          <DialogTitle>{isEditMode ? "Cập nhật Tài sản" : "Thêm Tài sản Mới"}</DialogTitle>
+          <DialogDescription>
+            {isEditMode ? "Chỉnh sửa thông tin chi tiết của thiết bị." : "Nhập thông tin chi tiết tài sản để thêm vào kho UET."}
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -67,46 +135,83 @@ export function AssetFormDialog({ open, onOpenChange, onSuccess }: AssetFormDial
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              Name <span className="text-red-500">*</span>
-            </label>
-            <Input
-              required
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="e.g., Excavator CAT 320"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-foreground mb-1">
+                Tên thiết bị <span className="text-red-500">*</span>
+              </label>
+              <Input
+                required
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="Ví dụ: Máy chiếu Panasonic PT-LB306"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">
+                Danh mục <span className="text-red-500">*</span>
+              </label>
+              <Input
+                required
+                value={formData.category}
+                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                placeholder="Ví dụ: Thiết bị giảng dạy"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">
+                Giá trị (VNĐ) <span className="text-red-500">*</span>
+              </label>
+              <Input
+                required
+                type="number"
+                min="0"
+                value={formData.value}
+                onChange={(e) =>
+                  setFormData({ ...formData, value: parseFloat(e.target.value) || 0 })
+                }
+              />
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              Category <span className="text-red-500">*</span>
-            </label>
-            <Input
-              required
-              value={formData.category}
-              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-              placeholder="e.g., Machinery, Equipment, Tools"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              Location <span className="text-red-500">*</span>
-            </label>
-            <Input
-              required
-              value={formData.location}
-              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-              placeholder="e.g., Site A, Warehouse B"
-            />
+          <div className="p-4 bg-muted/30 rounded-lg border border-border space-y-3">
+            <h4 className="text-sm font-semibold text-foreground">Vị trí đặt tài sản</h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Giảng đường <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={selectedHall}
+                  onChange={(e) => setSelectedHall(e.target.value)}
+                  className="w-full h-10 px-3 rounded-md border border-input bg-background text-foreground text-sm focus:ring-2 focus:ring-primary"
+                >
+                  {LECTURE_HALLS.map(hall => (
+                    <option key={hall.id} value={hall.id}>{hall.name}</option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Phòng / Chi tiết <span className="text-red-500">*</span>
+                </label>
+                <Input
+                  required
+                  value={roomNumber}
+                  onChange={(e) => setRoomNumber(e.target.value)}
+                  placeholder={selectedHall === 'OTHER' ? "Nhập vị trí cụ thể..." : "Ví dụ: 201, 305..."}
+                />
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-foreground mb-1">
-                Status
+                Trạng thái
               </label>
               <select
                 value={formData.status}
@@ -118,15 +223,15 @@ export function AssetFormDialog({ open, onOpenChange, onSuccess }: AssetFormDial
                 }
                 className="w-full h-10 px-3 rounded-md border border-input bg-background text-foreground text-sm"
               >
-                <option value="active">Active</option>
-                <option value="maintenance">Maintenance</option>
-                <option value="inactive">Inactive</option>
+                <option value="active">Đang sử dụng</option>
+                <option value="maintenance">Đang bảo trì</option>
+                <option value="inactive">Ngừng sử dụng</option>
               </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-foreground mb-1">
-                Condition (%)
+                Tình trạng (%)
               </label>
               <Input
                 type="number"
@@ -142,29 +247,11 @@ export function AssetFormDialog({ open, onOpenChange, onSuccess }: AssetFormDial
 
           <div>
             <label className="block text-sm font-medium text-foreground mb-1">
-              Value ($) <span className="text-red-500">*</span>
-            </label>
-            <Input
-              required
-              type="number"
-              min="0"
-              step="0.01"
-              value={formData.value}
-              onChange={(e) =>
-                setFormData({ ...formData, value: parseFloat(e.target.value) || 0 })
-              }
-              placeholder="0.00"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              Description
+              Mô tả thêm
             </label>
             <textarea
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Optional description..."
               className="w-full min-h-[80px] px-3 py-2 rounded-md border border-input bg-background text-foreground text-sm resize-none"
             />
           </div>
@@ -176,10 +263,10 @@ export function AssetFormDialog({ open, onOpenChange, onSuccess }: AssetFormDial
               onClick={() => onOpenChange(false)}
               disabled={loading}
             >
-              Cancel
+              Hủy bỏ
             </Button>
-            <Button type="submit" disabled={loading} className="bg-primary hover:bg-primary/90">
-              {loading ? "Creating..." : "Create Asset"}
+            <Button type="submit" disabled={loading} className="bg-primary hover:bg-primary/90 text-white">
+              {loading ? "Đang lưu..." : (isEditMode ? "Lưu thay đổi" : "Thêm mới")}
             </Button>
           </DialogFooter>
         </form>
@@ -187,4 +274,3 @@ export function AssetFormDialog({ open, onOpenChange, onSuccess }: AssetFormDial
     </Dialog>
   )
 }
-

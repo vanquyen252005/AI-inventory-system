@@ -8,8 +8,9 @@ const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "AI Asset Manager - Intelligent Asset Management",
-  description: "AI-powered asset management system with computer vision scanning",
+  // Đổi Title và Description
+  title: "Quản lý Tài sản - Trường ĐH Công nghệ (UET)",
+  description: "Hệ thống quản lý tài sản thông minh sử dụng AI cho Trường Đại học Công nghệ - ĐHQGHN",
   generator: "v0.app",
   icons: {
     icon: [
@@ -36,7 +37,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="vi">
       <body className={`font-sans antialiased`}>
         {children}
         <Analytics />

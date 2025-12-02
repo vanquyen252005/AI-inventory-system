@@ -1,49 +1,31 @@
-// src/repositories/scanRepository.js
 const { query } = require("../config/db");
 
 async function findAll(filters = {}) {
   let sql = `
     SELECT 
       s.id,
-      s.asset_id as "assetId",
-      s.file_name as "fileName",
-      s.file_path as "filePath",
-      s.file_size as "fileSize",
+      s.scan_code as "scan_code",    -- Đã sửa: scanCode -> scan_code
+      s.image_url as "image_url",    -- Đã sửa: imageUrl -> image_url
       s.status,
-      s.accuracy,
-      s.detected_items as "detectedItems",
-      s.error_message as "errorMessage",
-      s.uploaded_by as "uploadedBy",
-      s.uploaded_at as "uploadedAt",
-      s.updated_at as "updatedAt",
-      a.name as "assetName"
+      s.result_data as "result_data", -- Đã sửa: resultData -> result_data
+      s.device_cnt as "device_cnt",   -- Đã sửa: deviceCnt -> device_cnt
+      s.location,
+      s.scanned_at as "scanned_at"    -- Đã sửa: scannedAt -> scanned_at
     FROM scans s
-    LEFT JOIN assets a ON s.asset_id = a.id
     WHERE 1=1
   `;
   const params = [];
   let paramIndex = 1;
 
   if (filters.search) {
-    sql += ` AND (a.name ILIKE $${paramIndex} OR s.id ILIKE $${paramIndex})`;
+    sql += ` AND (s.location ILIKE $${paramIndex} OR s.scan_code ILIKE $${paramIndex})`;
     params.push(`%${filters.search}%`);
     paramIndex++;
   }
 
-  if (filters.status) {
-    sql += ` AND s.status = $${paramIndex}`;
-    params.push(filters.status);
-    paramIndex++;
-  }
+  sql += " ORDER BY s.scanned_at DESC";
 
-  if (filters.assetId) {
-    sql += ` AND s.asset_id = $${paramIndex}`;
-    params.push(filters.assetId);
-    paramIndex++;
-  }
-
-  sql += " ORDER BY s.uploaded_at DESC";
-
+  // Phân trang
   if (filters.limit) {
     sql += ` LIMIT $${paramIndex}`;
     params.push(filters.limit);
@@ -63,142 +45,57 @@ async function findById(id) {
   const result = await query(
     `SELECT 
       s.id,
-      s.asset_id as "assetId",
-      s.file_name as "fileName",
-      s.file_path as "filePath",
-      s.file_size as "fileSize",
+      s.scan_code as "scan_code",      -- Sửa đồng bộ ở đây luôn
+      s.image_url as "image_url",
       s.status,
-      s.accuracy,
-      s.detected_items as "detectedItems",
-      s.error_message as "errorMessage",
-      s.uploaded_by as "uploadedBy",
-      s.uploaded_at as "uploadedAt",
-      s.updated_at as "updatedAt",
-      a.name as "assetName",
-      a.id as "assetId"
+      s.result_data as "result_data",
+      s.device_cnt as "device_cnt",
+      s.location,
+      s.scanned_at as "scanned_at"
      FROM scans s
-     LEFT JOIN assets a ON s.asset_id = a.id
      WHERE s.id = $1`,
     [id]
   );
   return result.rows[0];
 }
 
-async function create(scanData) {
-  const {
-    id,
-    assetId,
-    fileName,
-    filePath,
-    fileSize,
-    status = "processing",
-    accuracy = 0,
-    detectedItems = 0,
-    userId,
-  } = scanData;
-
+async function create(data) {
+  const { scan_code, image_url, status, location } = data;
   const result = await query(
-    `INSERT INTO scans (id, asset_id, file_name, file_path, file_size, status, accuracy, detected_items, uploaded_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO scans (scan_code, image_url, status, location)
+     VALUES ($1, $2, $3, $4)
      RETURNING 
-       id,
-       asset_id as "assetId",
-       file_name as "fileName",
-       file_path as "filePath",
-       file_size as "fileSize",
-       status,
-       accuracy,
-       detected_items as "detectedItems",
-       error_message as "errorMessage",
-       uploaded_by as "uploadedBy",
-       uploaded_at as "uploadedAt",
-       updated_at as "updatedAt"`,
-    [id, assetId, fileName, filePath, fileSize, status, accuracy, detectedItems, userId]
+      id,
+      scan_code as "scan_code",
+      image_url as "image_url",
+      status,
+      location,
+      scanned_at as "scanned_at"`,
+    [scan_code, image_url, status || 'processing', location]
   );
   return result.rows[0];
 }
 
-async function update(id, scanData) {
-  const { status, accuracy, detectedItems, errorMessage } = scanData;
-
-  const updates = [];
-  const params = [];
-  let paramIndex = 1;
-
-  if (status !== undefined) {
-    updates.push(`status = $${paramIndex++}`);
-    params.push(status);
-  }
-  if (accuracy !== undefined) {
-    updates.push(`accuracy = $${paramIndex++}`);
-    params.push(accuracy);
-  }
-  if (detectedItems !== undefined) {
-    updates.push(`detected_items = $${paramIndex++}`);
-    params.push(detectedItems);
-  }
-  if (errorMessage !== undefined) {
-    updates.push(`error_message = $${paramIndex++}`);
-    params.push(errorMessage);
-  }
-
-  updates.push(`updated_at = NOW()`);
-  params.push(id);
-
-  const sql = `UPDATE scans SET ${updates.join(", ")} WHERE id = $${paramIndex} 
-    RETURNING 
+async function updateResult(id, status, resultData, deviceCount) {
+  const result = await query(
+    `UPDATE scans 
+     SET status = $1, result_data = $2, device_cnt = $3
+     WHERE id = $4
+     RETURNING 
       id,
-      asset_id as "assetId",
-      file_name as "fileName",
-      file_path as "filePath",
-      file_size as "fileSize",
+      scan_code as "scan_code",
+      image_url as "image_url",
       status,
-      accuracy,
-      detected_items as "detectedItems",
-      error_message as "errorMessage",
-      uploaded_by as "uploadedBy",
-      uploaded_at as "uploadedAt",
-      updated_at as "updatedAt"`;
-  const result = await query(sql, params);
+      result_data as "result_data",
+      device_cnt as "device_cnt"`,
+    [status, resultData, deviceCount, id]
+  );
   return result.rows[0];
-}
-
-async function remove(id) {
-  const result = await query("DELETE FROM scans WHERE id = $1 RETURNING *", [id]);
-  return result.rows[0];
-}
-
-async function count(filters = {}) {
-  let sql = "SELECT COUNT(*) FROM scans s WHERE 1=1";
-  const params = [];
-  let paramIndex = 1;
-
-  if (filters.search) {
-    sql += ` AND EXISTS (
-      SELECT 1 FROM assets a 
-      WHERE a.id = s.asset_id 
-      AND (a.name ILIKE $${paramIndex} OR s.id ILIKE $${paramIndex})
-    )`;
-    params.push(`%${filters.search}%`);
-    paramIndex++;
-  }
-
-  if (filters.status) {
-    sql += ` AND s.status = $${paramIndex}`;
-    params.push(filters.status);
-    paramIndex++;
-  }
-
-  const result = await query(sql, params);
-  return parseInt(result.rows[0].count, 10);
 }
 
 module.exports = {
   findAll,
   findById,
   create,
-  update,
-  remove,
-  count,
+  updateResult,
 };
-

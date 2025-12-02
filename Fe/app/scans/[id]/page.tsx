@@ -3,192 +3,216 @@
 import { AppLayout } from "@/components/layout/app-layout"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Download, Share2, ChevronLeft, Eye, AlertTriangle, CheckCircle } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { ArrowLeft, Play, Pause, RefreshCw, CheckCircle2, Box, Cpu, Monitor } from "lucide-react"
 import Link from "next/link"
-import { useState } from "react"
+import { useParams } from "next/navigation"
+import { useEffect, useState, useRef } from "react"
+import { getScanById, updateScanResult, type ScanResult, type DetectionItem } from "@/lib/scan-service"
 
-interface DetectionItem {
-  id: string
-  name: string
-  confidence: number
-  location: string
-  severity: "low" | "medium" | "high"
-}
-
-const detections: DetectionItem[] = [
-  { id: "DET-001", name: "Hydraulic Leak", confidence: 98, location: "Left side cylinder", severity: "high" },
-  { id: "DET-002", name: "Wear Pattern", confidence: 92, location: "Bucket teeth", severity: "medium" },
-  { id: "DET-003", name: "Rust Spot", confidence: 87, location: "Cabin exterior", severity: "low" },
-  { id: "DET-004", name: "Paint Damage", confidence: 84, location: "Main boom", severity: "low" },
+// Dữ liệu mẫu giả lập AI nhận diện
+const MOCK_AI_RESULTS = [
+  { class: "projector", confidence: 0.98, box: [100, 100, 200, 150] },
+  { class: "monitor", confidence: 0.92, box: [300, 200, 100, 100] },
+  { class: "monitor", confidence: 0.89, box: [420, 210, 100, 100] },
+  { class: "chair", confidence: 0.85, box: [50, 400, 80, 120] },
+  { class: "chair", confidence: 0.88, box: [150, 410, 80, 120] },
+  { class: "air_conditioner", confidence: 0.95, box: [500, 50, 150, 60] },
 ]
 
-export default function ScanDetailPage({ params }: { params: { id: string } }) {
-  const [activeTab, setActiveTab] = useState("overview")
+export default function ScanDetailPage() {
+  const params = useParams()
+  const scanId = params.id as string
+  
+  const [scan, setScan] = useState<ScanResult | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [processing, setProcessing] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case "high":
-        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-      case "medium":
-        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
-      case "low":
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+  useEffect(() => {
+    loadScanDetails()
+  }, [scanId])
+
+  const loadScanDetails = async () => {
+    try {
+      const data = await getScanById(scanId)
+      setScan(data)
+    } catch (error) {
+      console.error(error)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const getSeverityIcon = (severity: string) => {
-    switch (severity) {
-      case "high":
-        return <AlertTriangle className="w-5 h-5 text-red-600" />
-      case "medium":
-        return <AlertTriangle className="w-5 h-5 text-yellow-600" />
-      case "low":
-        return <CheckCircle className="w-5 h-5 text-blue-600" />
+  // Hàm giả lập AI chạy xong
+  const handleSimulateAI = async () => {
+    if (!scan) return
+    setProcessing(true)
+    
+    try {
+      // Giả vờ đợi 2 giây
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      
+      // Update trạng thái thành completed và nạp dữ liệu mẫu
+      await updateScanResult(scan.id, {
+        status: "completed",
+        result_data: MOCK_AI_RESULTS
+      })
+      
+      // Load lại trang
+      loadScanDetails()
+    } catch (error) {
+      alert("Lỗi giả lập: " + error)
+    } finally {
+      setProcessing(false)
     }
   }
+
+  // Helper render icon theo loại thiết bị
+  const getIcon = (type: string) => {
+    if (type.includes("monitor") || type.includes("screen")) return <Monitor className="w-5 h-5 text-blue-500" />
+    if (type.includes("cpu") || type.includes("projector")) return <Cpu className="w-5 h-5 text-purple-500" />
+    return <Box className="w-5 h-5 text-gray-500" />
+  }
+
+  // Helper dịch tên thiết bị sang tiếng Việt
+  const translateName = (name: string) => {
+    const dict: Record<string, string> = {
+      "projector": "Máy chiếu",
+      "monitor": "Màn hình PC",
+      "chair": "Ghế giáo viên",
+      "air_conditioner": "Điều hòa",
+      "table": "Bàn làm việc"
+    }
+    return dict[name] || name
+  }
+
+  if (loading) return <AppLayout><div className="p-8 text-center">Đang tải thông tin...</div></AppLayout>
+  if (!scan) return <AppLayout><div className="p-8 text-center">Không tìm thấy dữ liệu</div></AppLayout>
+
+  // Đường dẫn file (nếu chạy local cần đảm bảo Inventory Service serve file static, hoặc dùng link test)
+  // Tạm thời fix cứng host nếu cần: `http://localhost:4001/${scan.image_url}`
+  // Ở đây giả định backend trả về đường dẫn tương đối
+  const fileUrl = scan.image_url.startsWith("http") 
+    ? scan.image_url 
+    : `${process.env.NEXT_PUBLIC_INVENTORY_API_URL}/${scan.image_url.replace(/\\/g, "/")}`
+
+  const isVideo = scan.scan_code.match(/\.(mp4|mov|avi)$/i)
 
   return (
     <AppLayout>
-      <div className="p-8 max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col h-[calc(100vh-64px)] overflow-hidden">
+        {/* Header Toolbar */}
+        <div className="h-16 border-b border-border bg-card flex items-center px-6 justify-between shrink-0">
           <div className="flex items-center gap-4">
             <Link href="/scans">
-              <button className="p-2 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground transition-colors">
-                <ChevronLeft className="w-6 h-6" />
-              </button>
+              <Button variant="ghost" size="icon">
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
             </Link>
             <div>
-              <h1 className="text-3xl font-bold text-foreground">Scan Results - SCN-001</h1>
-              <p className="text-muted-foreground">Excavator CAT 320 • January 15, 2024</p>
+              <h1 className="font-semibold text-lg flex items-center gap-2">
+                {scan.scan_code}
+                <Badge variant={scan.status === 'completed' ? 'default' : 'secondary'} className={scan.status === 'completed' ? 'bg-green-600' : ''}>
+                  {scan.status === 'completed' ? 'Hoàn thành' : 'Đang xử lý'}
+                </Badge>
+              </h1>
+              <p className="text-xs text-muted-foreground flex items-center gap-2">
+                Quét tại: <span className="font-medium text-foreground">{scan.location || "Chưa xác định"}</span>
+                <span>•</span>
+                {new Date(scan.scanned_at).toLocaleString("vi-VN")}
+              </p>
             </div>
           </div>
+
           <div className="flex gap-2">
-            <Button variant="outline" className="flex items-center gap-2 bg-transparent">
-              <Download className="w-5 h-5" />
-              Export
-            </Button>
-            <Button variant="outline" className="flex items-center gap-2 bg-transparent">
-              <Share2 className="w-5 h-5" />
-              Share
-            </Button>
+            {scan.status !== 'completed' && (
+              <Button onClick={handleSimulateAI} disabled={processing} className="bg-purple-600 hover:bg-purple-700">
+                {processing ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : <Play className="w-4 h-4 mr-2" />}
+                Chạy AI Phân tích
+              </Button>
+            )}
+            <Button variant="outline">Xuất Báo cáo</Button>
           </div>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <Card className="p-6">
-            <p className="text-sm text-muted-foreground mb-2">Accuracy</p>
-            <p className="text-3xl font-bold text-primary">96%</p>
-            <p className="text-xs text-green-600 mt-2">High confidence</p>
-          </Card>
-          <Card className="p-6">
-            <p className="text-sm text-muted-foreground mb-2">Items Detected</p>
-            <p className="text-3xl font-bold text-primary">15</p>
-            <p className="text-xs text-accent mt-2">Components analyzed</p>
-          </Card>
-          <Card className="p-6">
-            <p className="text-sm text-muted-foreground mb-2">Issues Found</p>
-            <p className="text-3xl font-bold text-orange-600">4</p>
-            <p className="text-xs text-orange-600 mt-2">Requiring attention</p>
-          </Card>
-          <Card className="p-6">
-            <p className="text-sm text-muted-foreground mb-2">Condition Score</p>
-            <p className="text-3xl font-bold text-green-600">92%</p>
-            <p className="text-xs text-green-600 mt-2">Good condition</p>
-          </Card>
-        </div>
+        {/* Main Layout */}
+        <div className="flex-1 flex overflow-hidden">
+          
+          {/* Left: Media Viewer */}
+          <div className="flex-1 bg-black/5 flex items-center justify-center p-6 overflow-auto">
+            <div className="relative w-full max-w-4xl aspect-video bg-black rounded-xl overflow-hidden shadow-2xl">
+              {isVideo ? (
+                <video 
+                  ref={videoRef}
+                  src={fileUrl} 
+                  controls 
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <img src={fileUrl} alt="Scan Content" className="w-full h-full object-contain" />
+              )}
+              
+              {/* Overlay Bounding Boxes (Chỉ demo, cần tính toán tỉ lệ thực tế) */}
+              {/* Đây là chỗ có thể vẽ canvas đè lên nếu muốn hiển thị box */}
+            </div>
+          </div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6 border-b border-border">
-          {["overview", "detections", "measurements"].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-3 font-medium border-b-2 transition-colors ${
-                activeTab === tab
-                  ? "text-primary border-primary"
-                  : "text-muted-foreground hover:text-foreground border-transparent"
-              }`}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        {/* Tab Content */}
-        {activeTab === "overview" && (
-          <div className="space-y-6">
-            <Card className="p-6">
-              <h3 className="text-lg font-semibold text-foreground mb-4">Scan Overview</h3>
-              <div className="aspect-video bg-muted rounded-lg flex items-center justify-center mb-4">
-                <Eye className="w-12 h-12 text-muted-foreground" />
-              </div>
-              <p className="text-muted-foreground text-sm">
-                Scan visualization and 3D model would be displayed here with interactive controls for examining detected
-                components and anomalies.
+          {/* Right: Results Sidebar */}
+          <div className="w-96 bg-card border-l border-border flex flex-col shrink-0">
+            <div className="p-4 border-b border-border">
+              <h3 className="font-semibold flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-green-600" />
+                Kết quả nhận diện
+              </h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Tìm thấy <span className="font-bold text-primary">{scan.result_data?.length || 0}</span> thiết bị trong phòng
               </p>
-            </Card>
-          </div>
-        )}
+            </div>
 
-        {activeTab === "detections" && (
-          <div className="space-y-4">
-            {detections.map((detection) => (
-              <Card key={detection.id} className="p-6">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-4 flex-1">
-                    <div className="mt-1">{getSeverityIcon(detection.severity)}</div>
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-foreground mb-1">{detection.name}</h4>
-                      <p className="text-sm text-muted-foreground mb-3">{detection.location}</p>
-                      <div className="flex items-center gap-4 text-sm">
-                        <span className="text-muted-foreground">Confidence:</span>
-                        <div className="flex items-center gap-2">
-                          <div className="w-32 h-2 bg-muted rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-primary to-accent"
-                              style={{ width: `${detection.confidence}%` }}
-                            />
-                          </div>
-                          <span className="font-semibold text-primary min-w-12">{detection.confidence}%</span>
-                        </div>
+            <div className="flex-1 overflow-auto p-4 space-y-3">
+              {(!scan.result_data || scan.result_data.length === 0) ? (
+                <div className="text-center py-10 text-muted-foreground">
+                  <p>Chưa có kết quả.</p>
+                  <p className="text-xs">Vui lòng đợi hoặc bấm "Chạy AI Phân tích"</p>
+                </div>
+              ) : (
+                scan.result_data.map((item, index) => (
+                  <Card key={index} className="p-3 flex items-start gap-3 hover:bg-accent/5 transition-colors cursor-pointer border-l-4 border-l-transparent hover:border-l-primary">
+                    <div className="mt-1 p-2 bg-muted rounded-lg">
+                      {getIcon(item.class)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start">
+                        <h4 className="font-medium text-sm truncate" title={translateName(item.class)}>
+                          {translateName(item.class)}
+                        </h4>
+                        <Badge variant="outline" className="text-[10px] h-5">
+                          {(item.confidence * 100).toFixed(0)}%
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Tọa độ: [{item.box.join(", ")}]
+                      </p>
+                      <div className="mt-2 flex gap-2">
+                         {/* Nút thao tác nhanh cho từng item */}
+                         <button className="text-[10px] text-blue-600 hover:underline font-medium">Xác nhận</button>
+                         <button className="text-[10px] text-red-600 hover:underline">Báo sai</button>
                       </div>
                     </div>
-                  </div>
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${getSeverityColor(detection.severity)}`}
-                  >
-                    {detection.severity.charAt(0).toUpperCase() + detection.severity.slice(1)}
-                  </span>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
-
-        {activeTab === "measurements" && (
-          <Card className="p-6">
-            <h3 className="text-lg font-semibold text-foreground mb-4">Measurements & Specifications</h3>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {[
-                  "Boom Length",
-                  "Arm Length",
-                  "Bucket Capacity",
-                  "Total Height",
-                  "Ground Clearance",
-                  "Operating Weight",
-                ].map((spec, i) => (
-                  <div key={i} className="p-4 bg-muted rounded-lg">
-                    <p className="text-xs text-muted-foreground mb-1">{spec}</p>
-                    <p className="text-lg font-semibold text-foreground">{Math.floor(Math.random() * 100) + 50}m</p>
-                  </div>
-                ))}
-              </div>
+                  </Card>
+                ))
+              )}
             </div>
-          </Card>
-        )}
+            
+            <div className="p-4 border-t border-border bg-muted/10">
+              <Button className="w-full">
+                Lưu vào Kho tài sản
+              </Button>
+            </div>
+          </div>
+
+        </div>
       </div>
     </AppLayout>
   )

@@ -1,5 +1,8 @@
-// src/lib/auth-service.ts
+import { getRefreshToken, saveAuth, clearAuth } from "./auth-storage"
 
+const AUTH_API_URL = process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4000"
+
+// 1. Định nghĩa Interface chuẩn xác theo Backend
 export interface AuthUser {
   id: string
   email: string
@@ -7,10 +10,20 @@ export interface AuthUser {
   role: string
 }
 
-export interface LoginResponse {
-  accessToken: string
-  refreshToken: string
+export interface Tokens {
+  access: {
+    token: string
+    expires: string
+  }
+  refresh: {
+    token: string
+    expires: string
+  }
+}
+
+export interface AuthResponse {
   user: AuthUser
+  tokens: Tokens
 }
 
 export interface RegisterPayload {
@@ -19,63 +32,92 @@ export interface RegisterPayload {
   fullName?: string
 }
 
-export interface RegisterResponse {
-  id: string
-  email: string
-  fullName?: string
-  role: string
-  createdAt: string
-}
-
-const AUTH_API_URL =
-  process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4000"
-
 // ---- LOGIN ----
-export async function login(email: string, password: string): Promise<LoginResponse> {
+export async function login(email: string, password: string): Promise<AuthResponse> {
   const res = await fetch(`${AUTH_API_URL}/auth/login`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   })
 
   if (!res.ok) {
-    let message = "Login failed. Please check your credentials."
+    let message = "Đăng nhập thất bại"
     try {
       const data = await res.json()
       if (data?.message) message = data.message
-    } catch {
-      // ignore
-    }
+    } catch {}
     throw new Error(message)
   }
 
-  const data = (await res.json()) as LoginResponse
+  // Backend trả về { user, tokens }
+  const data = (await res.json()) as AuthResponse
   return data
 }
 
 // ---- REGISTER ----
-export async function register(payload: RegisterPayload): Promise<RegisterResponse> {
+export async function register(payload: RegisterPayload): Promise<AuthResponse> {
   const res = await fetch(`${AUTH_API_URL}/auth/register`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   })
 
   if (!res.ok) {
-    let message = "Register failed. Please try again."
+    let message = "Đăng ký thất bại"
     try {
       const data = await res.json()
       if (data?.message) message = data.message
-    } catch {
-      // ignore
-    }
+    } catch {}
     throw new Error(message)
   }
 
-  const data = (await res.json()) as RegisterResponse
+  const data = (await res.json()) as AuthResponse
   return data
+}
+
+// ---- REFRESH TOKEN (Quan trọng) ----
+export async function refreshAccessToken(): Promise<string | null> {
+  const refreshToken = getRefreshToken()
+  if (!refreshToken) return null
+
+  try {
+    const res = await fetch(`${AUTH_API_URL}/auth/refresh-tokens`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    })
+
+    if (!res.ok) throw new Error("Refresh failed")
+
+    // API refresh thường trả về object Tokens trực tiếp hoặc { access, refresh }
+    const data = await res.json()
+    
+    // Logic an toàn để lấy token dù cấu trúc trả về thế nào
+    let newAccessToken = ""
+    let newRefreshToken = ""
+
+    if (data.access && data.access.token) {
+        newAccessToken = data.access.token
+        newRefreshToken = data.refresh?.token
+    } else if (data.tokens && data.tokens.access) {
+        newAccessToken = data.tokens.access.token
+        newRefreshToken = data.tokens.refresh?.token
+    }
+
+    if (newAccessToken) {
+        // Cập nhật ngay vào LocalStorage để các request sau dùng luôn
+        localStorage.setItem("auth_token", newAccessToken)
+        if (newRefreshToken) {
+            localStorage.setItem("auth_refresh_token", newRefreshToken)
+        }
+        return newAccessToken
+    }
+
+    return null
+  } catch (error) {
+    console.error("Phiên đăng nhập hết hạn:", error)
+    clearAuth()
+    if (typeof window !== "undefined") window.location.href = "/login"
+    return null
+  }
 }

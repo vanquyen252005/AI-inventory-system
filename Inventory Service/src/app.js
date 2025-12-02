@@ -13,7 +13,7 @@ const assetRoutes = require("./routes/assetRoutes");
 const scanRoutes = require("./routes/scanRoutes"); // Route v1 (Cũ)
 const scanRoutesV2 = require("./routes/v2_scanRoutes"); // Route v2 (Mới)
 const reportRoutes = require("./routes/reportRoutes");
-
+const path = require("path");
 const app = express();
 
 // 1. Security Headers (Bảo mật)
@@ -31,7 +31,7 @@ app.use(metricsMiddleware);
 // 5. Body Parsing
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
+app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 // 6. Request Logging
 app.use((req, res, next) => {
   logger.info(`${req.method} ${req.path}`);

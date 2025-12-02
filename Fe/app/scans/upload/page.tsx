@@ -1,251 +1,174 @@
 "use client"
 
-import type React from "react"
-
+import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { AppLayout } from "@/components/layout/app-layout"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Upload, FileVideo, AlertCircle, CheckCircle2, X } from "lucide-react"
-import { useState } from "react"
+import { UploadCloud, FileVideo, FileImage, Loader2, ArrowLeft } from "lucide-react"
 import Link from "next/link"
+import { uploadScan } from "@/lib/scan-service"
 
-export default function UploadPage() {
-  const [isDragging, setIsDragging] = useState(false)
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+const LECTURE_HALLS = [
+  { id: "G2", name: "Giảng đường G2" },
+  { id: "GD2", name: "Giảng đường 2 (GD2)" },
+  { id: "GD3", name: "Giảng đường 3 (GD3)" },
+  { id: "GD4", name: "Giảng đường 4 (GD4)" },
+  { id: "OTHER", name: "Khu vực khác" }
+]
+
+export default function UploadScanPage() {
+  const router = useRouter()
+  const [file, setFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
-  const [uploadComplete, setUploadComplete] = useState(false)
-  const [assetId, setAssetId] = useState("")
+  
+  // State location
+  const [selectedHall, setSelectedHall] = useState("G2")
+  const [roomNumber, setRoomNumber] = useState("")
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-  }
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-    const files = e.dataTransfer.files
-    if (files.length > 0) {
-      setSelectedFile(files[0])
-    }
-  }
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.length) {
-      setSelectedFile(e.target.files[0])
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const selectedFile = e.target.files[0]
+      setFile(selectedFile)
+      
+      // Tạo preview nếu là ảnh
+      if (selectedFile.type.startsWith("image/")) {
+        setPreview(URL.createObjectURL(selectedFile))
+      } else {
+        setPreview(null)
+      }
     }
   }
 
   const handleUpload = async () => {
-    if (!selectedFile || !assetId) return
+    if (!file) return
 
-    setIsUploading(true)
-    setUploadProgress(0)
+    try {
+      setIsUploading(true)
+      
+      // Format location chuẩn UET: "GD2 - 201"
+      const location = selectedHall === "OTHER" 
+        ? roomNumber 
+        : `${selectedHall} - ${roomNumber}`
 
-    for (let i = 0; i <= 100; i += 10) {
-      await new Promise((resolve) => setTimeout(resolve, 200))
-      setUploadProgress(i)
+      await uploadScan(file, location)
+      
+      // Upload xong chuyển về trang danh sách
+      router.push("/scans")
+    } catch (error) {
+      console.error(error)
+      alert("Lỗi tải lên: " + (error instanceof Error ? error.message : "Vui lòng thử lại"))
+    } finally {
+      setIsUploading(false)
     }
-
-    setIsUploading(false)
-    setUploadComplete(true)
-  }
-
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes"
-    const k = 1024
-    const sizes = ["Bytes", "KB", "MB", "GB"]
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i]
   }
 
   return (
     <AppLayout>
       <div className="p-8 max-w-3xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Upload Video for Scanning</h1>
-          <p className="text-muted-foreground">Upload a video of your asset for AI-powered analysis</p>
+        <div className="mb-6">
+          <Link href="/scans" className="text-muted-foreground hover:text-primary flex items-center gap-2 mb-4 text-sm">
+            <ArrowLeft className="w-4 h-4" /> Quay lại danh sách
+          </Link>
+          <h1 className="text-3xl font-bold text-foreground">Tải lên dữ liệu quét</h1>
+          <p className="text-muted-foreground">Upload video hoặc hình ảnh phòng học để AI nhận diện thiết bị.</p>
         </div>
 
-        <div className="space-y-6">
-          {!uploadComplete ? (
-            <>
-              {/* Asset Selection */}
-              <Card className="p-6">
-                <label className="block text-sm font-semibold text-foreground mb-3">Select Asset</label>
-                <Input
-                  type="text"
-                  placeholder="Search or select an asset ID"
-                  value={assetId}
-                  onChange={(e) => setAssetId(e.target.value)}
-                  className="h-11"
-                />
-                <p className="text-xs text-muted-foreground mt-2">Enter an asset ID (e.g., AST-001)</p>
-              </Card>
-
-              {/* File Upload */}
-              <Card className="p-6">
-                <label className="block text-sm font-semibold text-foreground mb-4">Upload Video</label>
-
-                {!selectedFile ? (
-                  <div
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
-                      isDragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-                    }`}
-                  >
-                    <Upload
-                      className={`w-12 h-12 mx-auto mb-4 ${isDragging ? "text-primary" : "text-muted-foreground"}`}
-                    />
-                    <h3 className="font-semibold text-foreground mb-1">Drag and drop your video here</h3>
-                    <p className="text-sm text-muted-foreground mb-4">or</p>
-                    <label className="inline-block">
-                      <Button>Browse Files</Button>
-                      <input type="file" accept="video/*" onChange={handleFileSelect} className="hidden" />
-                    </label>
-                    <p className="text-xs text-muted-foreground mt-4">Supported formats: MP4, MOV, AVI (Max 500MB)</p>
+        <Card className="p-8">
+          {/* Khu vực chọn File */}
+          <div className="border-2 border-dashed border-border rounded-xl p-10 flex flex-col items-center justify-center text-center hover:bg-muted/30 transition-colors cursor-pointer relative">
+            <input 
+              type="file" 
+              accept="image/*,video/*" 
+              onChange={handleFileChange}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            />
+            
+            {file ? (
+              <div className="space-y-4">
+                {preview ? (
+                  <div className="relative w-full max-w-xs mx-auto aspect-video rounded-lg overflow-hidden border border-border">
+                    <img src={preview} alt="Preview" className="w-full h-full object-cover" />
                   </div>
                 ) : (
-                  <div className="border border-border rounded-lg p-6">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start gap-4">
-                        <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-                          <FileVideo className="w-6 h-6 text-primary" />
-                        </div>
-                        <div>
-                          <h4 className="font-semibold text-foreground">{selectedFile.name}</h4>
-                          <p className="text-sm text-muted-foreground">{formatFileSize(selectedFile.size)}</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setSelectedFile(null)}
-                        className="text-muted-foreground hover:text-destructive transition-colors"
-                      >
-                        <X className="w-5 h-5" />
-                      </button>
-                    </div>
-
-                    {!isUploading && (
-                      <Button
-                        onClick={() => {
-                          const input = document.createElement("input")
-                          input.type = "file"
-                          input.accept = "video/*"
-                          input.onchange = (e: any) => {
-                            if (e.target.files?.length) {
-                              setSelectedFile(e.target.files[0])
-                            }
-                          }
-                          input.click()
-                        }}
-                        variant="outline"
-                        className="mt-4"
-                      >
-                        Change File
-                      </Button>
-                    )}
+                  <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto text-blue-600">
+                    <FileVideo className="w-10 h-10" />
                   </div>
                 )}
-              </Card>
-
-              {/* Upload Button */}
-              {selectedFile && (
-                <div className="space-y-4">
-                  {isUploading && (
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Uploading...</span>
-                        <span className="font-semibold text-primary">{uploadProgress}%</span>
-                      </div>
-                      <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-primary to-accent transition-all duration-300"
-                          style={{ width: `${uploadProgress}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  <Button
-                    onClick={handleUpload}
-                    disabled={isUploading || !assetId}
-                    className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
-                  >
-                    {isUploading ? "Uploading..." : "Start Analysis"}
-                  </Button>
+                <div>
+                  <p className="font-semibold text-foreground">{file.name}</p>
+                  <p className="text-sm text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
                 </div>
-              )}
-
-              {/* Info Box */}
-              <Card className="p-6 bg-accent/5 border-accent/20">
-                <div className="flex gap-3">
-                  <AlertCircle className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="font-semibold text-foreground mb-1">Processing Information</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Our AI will analyze the video for object detection, condition assessment, and component
-                      identification. Processing typically takes 2-5 minutes.
-                    </p>
-                  </div>
-                </div>
-              </Card>
-            </>
-          ) : (
-            <Card className="p-12 text-center">
-              <div className="inline-block">
-                <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-4">
-                  <CheckCircle2 className="w-8 h-8 text-green-600" />
-                </div>
-              </div>
-              <h2 className="text-2xl font-bold text-foreground mb-2">Upload Successful!</h2>
-              <p className="text-muted-foreground mb-6">
-                Your video has been uploaded and is now being processed. You'll receive a notification when the analysis
-                is complete.
-              </p>
-              <div className="space-y-3 mb-6 text-left max-w-md mx-auto">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Asset:</span>
-                  <span className="font-semibold text-foreground">{assetId}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">File:</span>
-                  <span className="font-semibold text-foreground">{selectedFile?.name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Status:</span>
-                  <span className="font-semibold text-primary">Processing</span>
-                </div>
-              </div>
-              <div className="flex gap-3 justify-center">
-                <Link href="/scans">
-                  <Button className="bg-primary hover:bg-primary/90">Xem danh sách quét</Button>
-                </Link>
-                <Link  href="/scans/upload">
-                  <Button
-                  variant="outline"
-                  onClick={() => {
-                    setUploadComplete(false)
-                    setSelectedFile(null)
-                    setAssetId("")
-                  }}
-                >
-                  Upload Another
+                <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); setFile(null); }}>
+                  Chọn file khác
                 </Button>
-                </Link>
               </div>
-            </Card>
-          )}
-        </div>
+            ) : (
+              <>
+                <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mb-4">
+                  <UploadCloud className="w-10 h-10 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-semibold mb-2">Kéo thả hoặc Click để tải lên</h3>
+                <p className="text-sm text-muted-foreground max-w-xs">
+                  Hỗ trợ định dạng hình ảnh (JPG, PNG) và video (MP4). Dung lượng tối đa 50MB.
+                </p>
+              </>
+            )}
+          </div>
+
+          {/* Form chọn vị trí */}
+          <div className="mt-8 space-y-6">
+            <h3 className="text-lg font-semibold">Thông tin vị trí quét</h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Khu vực / Giảng đường
+                </label>
+                <select
+                  value={selectedHall}
+                  onChange={(e) => setSelectedHall(e.target.value)}
+                  className="w-full h-11 px-3 rounded-md border border-input bg-background text-foreground text-sm"
+                >
+                  {LECTURE_HALLS.map(hall => (
+                    <option key={hall.id} value={hall.id}>{hall.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Số phòng / Chi tiết
+                </label>
+                <Input 
+                  placeholder="Ví dụ: 301, Phòng máy 1..." 
+                  value={roomNumber}
+                  onChange={(e) => setRoomNumber(e.target.value)}
+                  className="h-11"
+                />
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-border flex justify-end gap-3">
+              <Button variant="outline" onClick={() => router.back()}>Hủy bỏ</Button>
+              <Button 
+                onClick={handleUpload} 
+                disabled={!file || !roomNumber || isUploading}
+                className="min-w-[140px] bg-primary hover:bg-primary/90"
+              >
+                {isUploading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Đang tải lên...
+                  </>
+                ) : (
+                  "Bắt đầu Quét AI"
+                )}
+              </Button>
+            </div>
+          </div>
+        </Card>
       </div>
     </AppLayout>
   )

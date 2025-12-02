@@ -32,7 +32,7 @@ export default function LoginPage() {
       router.push("/") // redirect dashboard/home
     } catch (err: any) {
       console.error(err)
-      setError(err.message || "Something went wrong. Please try again.")
+      setError(err.message || "Đã xảy ra lỗi. Vui lòng thử lại.")
     } finally {
       setIsLoading(false)
     }
@@ -49,17 +49,17 @@ export default function LoginPage() {
       {/* Login Card */}
       <div className="w-full max-w-md relative z-10">
         <Card className="p-8 shadow-xl">
-          {/* Header */}
+          {/* Header - Đổi tên và lời chào */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 bg-linear-to-br from-primary to-accent rounded-lg flex items-center justify-center">
-                <span className="text-white text-sm font-black">AI</span>
+                <span className="text-white text-xs font-black">UET</span>
               </div>
-              <h1 className="text-2xl font-bold text-foreground">AssetAI</h1>
+              <h1 className="text-2xl font-bold text-foreground">UET Asset Manager</h1>
             </div>
-            <h2 className="text-xl font-semibold text-foreground mb-2">Welcome Back</h2>
+            <h2 className="text-xl font-semibold text-foreground mb-2">Chào mừng trở lại</h2>
             <p className="text-muted-foreground text-sm">
-              Sign in to your account to continue
+              Đăng nhập tài khoản trường để tiếp tục
             </p>
           </div>
 
@@ -75,13 +75,13 @@ export default function LoginPage() {
             {/* Email Field */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">
-                Email Address
+                Địa chỉ Email
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <Input
                   type="email"
-                  placeholder="you@example.com"
+                  placeholder="name@vnu.edu.vn" 
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-10 h-11"
@@ -93,7 +93,7 @@ export default function LoginPage() {
             {/* Password Field */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">
-                Password
+                Mật khẩu
               </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -126,10 +126,10 @@ export default function LoginPage() {
                   type="checkbox"
                   className="w-4 h-4 rounded border-border"
                 />
-                <span className="text-muted-foreground">Remember me</span>
+                <span className="text-muted-foreground">Ghi nhớ đăng nhập</span>
               </label>
               <Link href="#" className="text-primary hover:underline">
-                Forgot password?
+                Quên mật khẩu?
               </Link>
             </div>
 
@@ -142,11 +142,11 @@ export default function LoginPage() {
               {isLoading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-                  Signing in...
+                  Đang xử lý...
                 </>
               ) : (
                 <>
-                  Sign In
+                  Đăng nhập
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -160,7 +160,7 @@ export default function LoginPage() {
             </div>
             <div className="relative flex justify-center text-sm">
               <span className="px-2 bg-card text-muted-foreground">
-                or continue with
+                hoặc tiếp tục với
               </span>
             </div>
           </div>
@@ -198,23 +198,24 @@ export default function LoginPage() {
 
           {/* Sign Up Link */}
           <p className="text-center text-sm text-muted-foreground mt-6">
-            Don&apos;t have an account?{" "}
+            Bạn chưa có tài khoản?{" "}
             <Link href="/register" className="text-primary font-medium hover:underline">
-              Sign up now
+              Đăng ký ngay
             </Link>
           </p>
         </Card>
 
-        {/* Footer */}
+       {/* Footer */}
         <p className="text-center text-xs text-muted-foreground mt-6">
-          By signing in, you agree to our{" "}
+          Bằng việc đăng nhập, bạn đồng ý với{" "}
           <Link href="#" className="hover:underline">
-            Terms of Service
+            Điều khoản sử dụng
           </Link>{" "}
-          and{" "}
+          và{" "}
           <Link href="#" className="hover:underline">
-            Privacy Policy
-          </Link>
+            Chính sách bảo mật
+          </Link>{" "}
+          của nhà trường.
         </p>
       </div>
     </div>

@@ -1,15 +1,26 @@
-// src/services/assetService.js
 const assetRepository = require("../repositories/assetRepository");
 
 async function getAllAssets(filters = {}) {
-  const assets = await assetRepository.findAll(filters);
-  const total = await assetRepository.count(filters);
+  // 1. Tính toán phân trang tại Service
+  const page = parseInt(filters.page) || 1;
+  const limit = parseInt(filters.limit) || 10;
+  const offset = (page - 1) * limit;
 
+  // 2. Gọi findAll mới (trả về cả assets và total)
+  // Truyền thêm limit và offset xuống repo
+  const { assets, total } = await assetRepository.findAll({ 
+    ...filters, 
+    limit, 
+    offset 
+  });
+
+  // 3. Trả về cấu trúc chuẩn cho Controller
   return {
     assets,
     total,
-    page: filters.page || 1,
-    limit: filters.limit || 10,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit)
   };
 }
 
@@ -22,12 +33,9 @@ async function getAssetById(id) {
 }
 
 async function createAsset(assetData) {
-  // Generate asset ID if not provided
-  if (!assetData.id) {
-    const count = await assetRepository.count();
-    assetData.id = `AST-${String(count + 1).padStart(3, "0")}`;
-  }
-
+  // 4. Bỏ logic tự sinh ID (AST-001...)
+  // Database đã tự sinh UUID rồi.
+  
   return await assetRepository.create(assetData);
 }
 
@@ -46,7 +54,8 @@ async function deleteAsset(id) {
     throw new Error("Asset not found");
   }
 
-  return await assetRepository.remove(id);
+  // 5. Đổi tên hàm từ .remove() thành .delete() cho khớp với Repository
+  return await assetRepository.delete(id);
 }
 
 module.exports = {
@@ -56,4 +65,3 @@ module.exports = {
   updateAsset,
   deleteAsset,
 };
-
