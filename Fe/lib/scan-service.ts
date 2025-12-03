@@ -1,5 +1,4 @@
 import { fetchWithAuth } from "./api-client"
-import { getAccessToken } from "./auth-storage" // Still needed for raw fetch in upload
 
 const INVENTORY_API_URL = process.env.NEXT_PUBLIC_INVENTORY_API_URL || "http://localhost:4001"
 
@@ -29,32 +28,17 @@ export async function getScanById(id: string): Promise<ScanResult> {
   return fetchWithAuth(`${INVENTORY_API_URL}/scans/${id}`)
 }
 
-// NOTE: Upload is special because it uses FormData, not JSON.
-// We keep manual fetch but can wrap token logic if desired.
-// For simplicity, we keep manual fetch here but make sure it handles errors.
+// Đã cập nhật: Sử dụng fetchWithAuth để hưởng cơ chế Refresh Token
 export async function uploadScan(file: File, location: string): Promise<ScanResult> {
-  // We grab token manually here because fetchWithAuth defaults to Content-Type: application/json
-  const token = getAccessToken()
-  
   const formData = new FormData()
   formData.append("file", file)
   formData.append("location", location)
 
-  const res = await fetch(`${INVENTORY_API_URL}/scans/upload`, {
+  // Không cần set Header thủ công nữa, api-client tự lo
+  return fetchWithAuth(`${INVENTORY_API_URL}/scans/upload`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      // Do NOT set Content-Type, let browser set multipart/form-data boundary
-    },
     body: formData,
   })
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.message || "Upload failed")
-  }
-
-  return res.json()
 }
 
 export async function updateScanResult(id: string, data: { status: string, result_data: any[] }) {

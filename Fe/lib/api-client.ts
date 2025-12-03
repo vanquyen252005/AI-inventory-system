@@ -8,11 +8,16 @@ interface FetchOptions extends RequestInit {
 export async function fetchWithAuth(url: string, options: FetchOptions = {}) {
   let token = getAccessToken()
 
-  // 1. Gắn Access Token vào Header
-  const headers = {
-    "Content-Type": "application/json",
+  // 1. Chuẩn bị Header
+  const headers: Record<string, string> = {
     ...options.headers,
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }
+
+  // LOGIC MỚI: Chỉ thêm Content-Type: application/json nếu KHÔNG PHẢI là FormData
+  // Nếu là FormData, để trình duyệt tự set (để có boundary)
+  if (!(options.body instanceof FormData) && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json"
   }
 
   // 2. Gọi API lần đầu
@@ -20,17 +25,16 @@ export async function fetchWithAuth(url: string, options: FetchOptions = {}) {
 
   // 3. Nếu lỗi 401 (Hết hạn) -> Thử Refresh Token
   if (response.status === 401) {
-    console.log("Token hết hạn. Đang thử gia hạn...")
+    console.log("Token hết hạn khi gọi API. Đang thử gia hạn...")
     
-    // Gọi hàm refresh đã viết ở Bước 1
     const newToken = await refreshAccessToken()
     
     if (newToken) {
-      // Refresh thành công -> Gọi lại API ban đầu với token mới
+      // Refresh thành công -> Gọi lại API với token mới
       headers.Authorization = `Bearer ${newToken}`
       response = await fetch(url, { ...options, headers })
     } else {
-      // Refresh thất bại -> Logout và chuyển về Login
+      // Refresh thất bại -> Logout
       clearAuth()
       if (typeof window !== "undefined") {
         window.location.href = "/login"
@@ -39,7 +43,7 @@ export async function fetchWithAuth(url: string, options: FetchOptions = {}) {
     }
   }
 
-  // 4. Xử lý các lỗi khác
+  // 4. Xử lý lỗi chung
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}))
     throw new Error(errorData.message || `Lỗi API: ${response.status}`)

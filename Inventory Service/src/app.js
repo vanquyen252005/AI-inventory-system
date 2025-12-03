@@ -43,6 +43,9 @@ app.get('/metrics', metricsEndpoint);
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 // --- CHIẾN LƯỢC VERSIONING (QUAN TRỌNG) ---
 
+
+app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+
 // Group 1: API v1 (Sắp bỏ - Deprecated)
 // Logic: Ai gọi vào /api/v1 sẽ bị dính middleware cảnh báo Warning ở Header
 const v1Router = express.Router();

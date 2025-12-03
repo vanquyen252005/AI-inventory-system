@@ -1,99 +1,203 @@
 import cv2
 import json
 import os
+import time
+import requests
+import numpy as np # Thêm thư viện này
 from ultralytics import solutions
 
-VIDEO_IN = "Object3.mp4"
-MODEL_PATH = "best.pt"
-JSON_OUT = "object_counting_output.json"
-VIDEO_OUT = "object_counting_output.mp4"  # gợi ý dùng .mp4 nếu fourcc = mp4v
+# --- CẤU HÌNH KẾT NỐI SERVER ---
+AUTH_SERVICE_URL = "http://localhost:4000"
+INVENTORY_SERVICE_URL = "http://localhost:4001"
 
+AUTH_EMAIL = "hung@123"          
+AUTH_PASSWORD = "12345678"                   
+DOWNLOAD_DIR = "temp_downloads"         
 
-cap = cv2.VideoCapture(VIDEO_IN)
-assert cap.isOpened(), f"Error reading video file: {VIDEO_IN}"
+if not os.path.exists(DOWNLOAD_DIR):
+    os.makedirs(DOWNLOAD_DIR)
 
+# --- BIẾN TOÀN CỤC CHO TOKEN ---
+current_token = None
 
-region_points = [[1853, 44], [1879, 1024], [29, 1013], [13, 24]]
-
-
-
-w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-fps = cap.get(cv2.CAP_PROP_FPS) or 30
-fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-video_writer = cv2.VideoWriter(VIDEO_OUT, fourcc, fps, (w, h))
-
-
-counter = solutions.ObjectCounter(
-    show=True,
-    region=region_points,
-    model=MODEL_PATH,
-    # classes=[...],         # nếu muốn chỉ đếm một số lớp
-    # tracker="botsort.yaml" # hoặc "bytetrack.yaml"
-)
-
-
-frames_json = []
-frame_idx = 0
-
-while cap.isOpened():
-    ok, im0 = cap.read()
-    if not ok:
-        print("Video frame is empty or processing is complete.")
-        break
-
-    results = counter(im0)  # alias của process()
-
-
-    objects = []
-    names = getattr(counter, "names", None) or {}
-    for box, tid, cls, conf in zip(counter.boxes, counter.track_ids, counter.clss, counter.confs):
-        x1, y1, x2, y2 = map(float, box)  # xyxy
-        cls_id = int(cls)
-        label = names.get(cls_id, str(cls_id))
-        objects.append({
-            "track_id": int(tid),
-            "class_id": cls_id,
-            "label": label,
-            "confidence": float(conf),
-            "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
+def login():
+    """Đăng nhập để lấy Token"""
+    global current_token
+    try:
+        print(f"🔐 Đang đăng nhập vào {AUTH_SERVICE_URL}...")
+        response = requests.post(f"{AUTH_SERVICE_URL}/auth/login", json={
+            "email": AUTH_EMAIL,
+            "password": AUTH_PASSWORD
         })
+        
+        if response.status_code == 200:
+            data = response.json()
+            if "accessToken" in data:
+                current_token = data["accessToken"]
+            elif "tokens" in data and "access" in data["tokens"]:
+                current_token = data["tokens"]["access"]["token"]
+            
+            print("✅ Đăng nhập thành công!")
+            return True
+        else:
+            print(f"❌ Đăng nhập thất bại: {response.text}")
+            return False
+    except Exception as e:
+        print(f"❌ Lỗi kết nối Login: {e}")
+        return False
 
+def get_headers():
+    if not current_token:
+        login()
+    return {"Authorization": f"Bearer {current_token}"}
 
-    frames_json.append({
-        "frame_index": frame_idx,
-        "timestamp_sec": round(frame_idx / float(fps), 3),
-        "in_count": int(results.in_count),
-        "out_count": int(results.out_count),
-        "classwise_count": results.classwise_count,   # {"person": {"IN":x,"OUT":y}, ...}
-        "total_tracks": int(results.total_tracks),
-        "objects": objects
-    })
+def get_pending_scans():
+    try:
+        response = requests.get(f"{INVENTORY_SERVICE_URL}/scans", headers=get_headers())
+        
+        if response.status_code == 401:
+            print("🔄 Token hết hạn, đăng nhập lại...")
+            if login():
+                return get_pending_scans()
+            return []
+            
+        if response.status_code == 200:
+            scans = response.json()
+            if isinstance(scans, dict) and "scans" in scans: 
+                scans = scans["scans"]
+            return [s for s in scans if s.get("status") == "processing"]
+        return []
+    except Exception as e:
+        print(f"⚠️ Lỗi lấy danh sách scan: {e}")
+        return []
 
+def process_scan(scan):
+    scan_id = scan["id"]
+    file_url = scan.get("image_url") or scan.get("imageUrl")
+    
+    print(f"⬇️ Đang tải file cho Scan ID: {scan_id}...")
+    local_video_path = os.path.join(DOWNLOAD_DIR, f"{scan_id}.mp4")
+    
+    # URL tải file từ Inventory Service
+    full_url = f"{INVENTORY_SERVICE_URL}/{file_url}".replace("\\", "/")
+    
+    try:
+        with requests.get(full_url, stream=True) as r:
+            r.raise_for_status()
+            with open(local_video_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+        
+        if os.path.getsize(local_video_path) == 0:
+            raise Exception("File tải về bị rỗng (0 bytes)")
+            
+    except Exception as e:
+        print(f"❌ Không thể tải file: {e}")
+        requests.put(f"{INVENTORY_SERVICE_URL}/scans/{scan_id}", json={"status": "failed"}, headers=get_headers())
+        return
 
-    video_writer.write(results.plot_im)
+    # --- CHẠY AI ---
+    print(f"🧠 Đang chạy AI phân tích...")
+    
+    cap = cv2.VideoCapture(local_video_path)
+    if not cap.isOpened():
+        print("❌ Không mở được file (Lỗi Codec hoặc File hỏng).")
+        requests.put(f"{INVENTORY_SERVICE_URL}/scans/{scan_id}", json={"status": "failed"}, headers=get_headers())
+        return
 
-    frame_idx += 1
+    # Lấy kích thước frame
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    # Nếu không lấy được kích thước (do file lỗi), gán mặc định để tránh crash
+    if w == 0 or h == 0: 
+        w, h = 640, 480
 
-simple_counts = {}
+    region_points = [(0, h//2), (w, h//2), (w, h), (0, h)]
 
-for label, counts in counter.classwise_count.items():
-    in_cnt = counts.get("IN", 0)
-    out_cnt = counts.get("OUT", 0)
-    total = in_cnt + out_cnt
-    simple_counts[label] = total
+    try:
+        # Khởi tạo bộ đếm
+        counter = solutions.ObjectCounter(
+            show=False, 
+            region=region_points,
+            model="runs\detect\train2\weights\best.pt",
+        )
 
+        unique_objects = {} 
 
-output = {
-    "video": os.path.abspath(VIDEO_IN),
-    "model": os.path.abspath(MODEL_PATH),
-    "objects": simple_counts
-}
+        while cap.isOpened():
+            ok, im0 = cap.read()
+            if not ok:
+                break
+            
+            # --- SỬA LỖI 4 KÊNH MÀU (RGBA) ---
+            # Nếu ảnh có 4 kênh (PNG trong suốt), chuyển về 3 kênh (BGR)
+            if im0.shape[2] == 4:
+                im0 = cv2.cvtColor(im0, cv2.COLOR_BGRA2BGR)
+            
+            # Gọi trực tiếp object
+            results = counter(im0) 
+            
+            if counter.boxes is not None:
+                for box, tid, cls, conf in zip(counter.boxes, counter.track_ids, counter.clss, counter.confs):
+                    if tid is None: continue 
+                    tid = int(tid)
+                    if tid not in unique_objects:
+                        x1, y1, x2, y2 = map(float, box)
+                        label = counter.names[int(cls)]
+                        unique_objects[tid] = {
+                            "class": label, 
+                            "confidence": float(conf),
+                            "box": [x1, y1, x2, y2],
+                            "id": str(tid)
+                        }
 
-with open(JSON_OUT, "w", encoding="utf-8") as f:
-    json.dump(output, f, ensure_ascii=False, indent=2)
+        cap.release()
 
-cap.release()
-video_writer.release()
-cv2.destroyAllWindows()
-print(f"✅ JSON saved to {JSON_OUT}\n🎬 Video saved to {VIDEO_OUT}")
+        # Gửi kết quả
+        final_results = list(unique_objects.values())
+        print(f"⬆️ Đang gửi {len(final_results)} vật thể về Server...")
+        
+        res = requests.put(
+            f"{INVENTORY_SERVICE_URL}/scans/{scan_id}", 
+            json={
+                "status": "completed",
+                "result_data": final_results 
+            }, 
+            headers=get_headers()
+        )
+        
+        if res.status_code == 200:
+            print(f"✅ Hoàn tất Scan ID: {scan_id}")
+        else:
+            print(f"⚠️ Lỗi cập nhật Server: {res.text}")
+
+    except Exception as e:
+        print(f"⚠️ Lỗi trong quá trình AI: {e}")
+        requests.put(f"{INVENTORY_SERVICE_URL}/scans/{scan_id}", json={"status": "failed"}, headers=get_headers())
+    finally:
+        # Dọn dẹp
+        if os.path.exists(local_video_path):
+            os.remove(local_video_path)
+
+if __name__ == "__main__":
+    print("🚀 AI Scan Service đang chạy...")
+    if not login():
+        print("Vui lòng kiểm tra Auth Service (Port 4000) đang chạy chưa.")
+        exit(1)
+
+    while True:
+        try:
+            pending = get_pending_scans()
+            if pending:
+                print(f"🔍 Tìm thấy {len(pending)} yêu cầu mới.")
+                for scan in pending:
+                    process_scan(scan)
+            else:
+                print(".", end="", flush=True)
+            time.sleep(5)
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            print(f"\n⚠️ Lỗi vòng lặp: {e}")
+            time.sleep(5)
