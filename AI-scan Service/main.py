@@ -4,7 +4,7 @@ import os
 from ultralytics import solutions
 
 VIDEO_IN = "Object3.mp4"
-MODEL_PATH = "best.pt"
+MODEL_PATH = "runs/detect/train2/weights/best.pt"
 JSON_OUT = "object_counting_output.json"
 VIDEO_OUT = "object_counting_output.mp4"  # gợi ý dùng .mp4 nếu fourcc = mp4v
 
