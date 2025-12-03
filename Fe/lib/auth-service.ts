@@ -89,33 +89,19 @@ export async function refreshAccessToken(): Promise<string | null> {
 
     if (!res.ok) throw new Error("Refresh failed")
 
-    // API refresh thường trả về object Tokens trực tiếp hoặc { access, refresh }
     const data = await res.json()
     
-    // Logic an toàn để lấy token dù cấu trúc trả về thế nào
-    let newAccessToken = ""
-    let newRefreshToken = ""
-
-    if (data.access && data.access.token) {
-        newAccessToken = data.access.token
-        newRefreshToken = data.refresh?.token
-    } else if (data.tokens && data.tokens.access) {
-        newAccessToken = data.tokens.access.token
-        newRefreshToken = data.tokens.refresh?.token
-    }
-
-    if (newAccessToken) {
-        // Cập nhật ngay vào LocalStorage để các request sau dùng luôn
-        localStorage.setItem("auth_token", newAccessToken)
-        if (newRefreshToken) {
-            localStorage.setItem("auth_refresh_token", newRefreshToken)
-        }
-        return newAccessToken
-    }
+    // --- CẬP NHẬT MỚI: Gọi saveAuth để lưu cả Cookie & Storage ---
+    saveAuth(data) 
+    
+    // Trả về token mới để API Client dùng ngay
+    if (data.accessToken) return data.accessToken
+    if (data.tokens && data.tokens.access) return data.tokens.access.token
+    if (data.access && data.access.token) return data.access.token
 
     return null
   } catch (error) {
-    console.error("Phiên đăng nhập hết hạn:", error)
+    console.error("Lỗi gia hạn phiên:", error)
     clearAuth()
     if (typeof window !== "undefined") window.location.href = "/login"
     return null

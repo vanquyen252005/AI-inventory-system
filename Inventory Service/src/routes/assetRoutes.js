@@ -336,5 +336,17 @@ router.delete("/assets/:id", authGuard(), async (req, res, next) => {
     next(err);
   }
 });
+router.post("/assets/bulk", authGuard(), async (req, res, next) => {
+  try {
+    const assets = req.body.assets; // Mong đợi mảng []
+    if (!Array.isArray(assets) || assets.length === 0) {
+      return res.status(400).json({ message: "Danh sách tài sản trống" });
+    }
 
+    const result = await assetService.createBulkAssets(assets);
+    return res.status(201).json({ message: `Đã thêm ${result.length} tài sản`, data: result });
+  } catch (err) {
+    next(err);
+  }
+});
 module.exports = router;

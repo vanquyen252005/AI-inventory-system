@@ -57,11 +57,14 @@ async function deleteAsset(id) {
   // 5. Đổi tên hàm từ .remove() thành .delete() cho khớp với Repository
   return await assetRepository.delete(id);
 }
-
+async function createBulkAssets(assetsData) {
+  return await assetRepository.createMany(assetsData);
+}
 module.exports = {
   getAllAssets,
   getAssetById,
   createAsset,
   updateAsset,
   deleteAsset,
+  createBulkAssets,
 };

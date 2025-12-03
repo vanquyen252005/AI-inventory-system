@@ -93,6 +93,40 @@ class AssetRepository {
     await db.query('DELETE FROM assets WHERE id = $1', [id]);
     return true;
   }
+
+  // --- SỬA LỖI Ở ĐÂY: Bỏ từ khóa 'function' và dùng 'db.query' ---
+  async createMany(assets) {
+    if (!assets || assets.length === 0) return [];
+
+    // Tạo placeholders ($1, $2...), ($8, $9...)...
+    const placeholders = [];
+    const values = [];
+    let paramIndex = 1;
+
+    assets.forEach(asset => {
+      placeholders.push(`($${paramIndex}, $${paramIndex+1}, $${paramIndex+2}, $${paramIndex+3}, $${paramIndex+4}, $${paramIndex+5}, $${paramIndex+6})`);
+      values.push(
+        asset.name, 
+        asset.category, 
+        asset.location, 
+        asset.status || 'active', 
+        asset.value || 0, 
+        asset.condition || 100, 
+        asset.description || ''
+      );
+      paramIndex += 7;
+    });
+
+    const sql = `
+      INSERT INTO assets (name, category, location, status, value, condition, description)
+      VALUES ${placeholders.join(', ')}
+      RETURNING *
+    `;
+
+    // Sửa 'query' thành 'db.query'
+    const result = await db.query(sql, values);
+    return result.rows;
+  }
 }
 
 module.exports = new AssetRepository();

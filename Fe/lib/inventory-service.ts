@@ -80,3 +80,9 @@ export async function deleteAsset(id: string) {
     method: "DELETE",
   })
 }
+export async function createBulkAssets(assets: CreateAssetPayload[]) {
+  return fetchWithAuth(`${INVENTORY_API_URL}/assets/bulk`, {
+    method: "POST",
+    body: JSON.stringify({ assets }),
+  })
+}

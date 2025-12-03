@@ -3,7 +3,7 @@ import json
 import os
 import time
 import requests
-import numpy as np # Thêm thư viện này
+import numpy as np
 from ultralytics import solutions
 
 # --- CẤU HÌNH KẾT NỐI SERVER ---
@@ -14,14 +14,16 @@ AUTH_EMAIL = "hung@123"
 AUTH_PASSWORD = "12345678"                   
 DOWNLOAD_DIR = "temp_downloads"         
 
+# Đường dẫn model (SỬA LẠI DÙNG DẤU /)
+MODEL_PATH = "runs/detect/train2/weights/best.pt" 
+# Hoặc nếu file chưa tồn tại thì dùng tạm: MODEL_PATH = "yolov8n.pt"
+
 if not os.path.exists(DOWNLOAD_DIR):
     os.makedirs(DOWNLOAD_DIR)
 
-# --- BIẾN TOÀN CỤC CHO TOKEN ---
 current_token = None
 
 def login():
-    """Đăng nhập để lấy Token"""
     global current_token
     try:
         print(f"🔐 Đang đăng nhập vào {AUTH_SERVICE_URL}...")
@@ -29,19 +31,15 @@ def login():
             "email": AUTH_EMAIL,
             "password": AUTH_PASSWORD
         })
-        
         if response.status_code == 200:
             data = response.json()
             if "accessToken" in data:
                 current_token = data["accessToken"]
             elif "tokens" in data and "access" in data["tokens"]:
                 current_token = data["tokens"]["access"]["token"]
-            
             print("✅ Đăng nhập thành công!")
             return True
-        else:
-            print(f"❌ Đăng nhập thất bại: {response.text}")
-            return False
+        return False
     except Exception as e:
         print(f"❌ Lỗi kết nối Login: {e}")
         return False
@@ -54,21 +52,15 @@ def get_headers():
 def get_pending_scans():
     try:
         response = requests.get(f"{INVENTORY_SERVICE_URL}/scans", headers=get_headers())
-        
         if response.status_code == 401:
-            print("🔄 Token hết hạn, đăng nhập lại...")
-            if login():
-                return get_pending_scans()
+            if login(): return get_pending_scans()
             return []
-            
         if response.status_code == 200:
             scans = response.json()
-            if isinstance(scans, dict) and "scans" in scans: 
-                scans = scans["scans"]
+            if isinstance(scans, dict) and "scans" in scans: scans = scans["scans"]
             return [s for s in scans if s.get("status") == "processing"]
         return []
-    except Exception as e:
-        print(f"⚠️ Lỗi lấy danh sách scan: {e}")
+    except:
         return []
 
 def process_scan(scan):
@@ -77,11 +69,12 @@ def process_scan(scan):
     
     print(f"⬇️ Đang tải file cho Scan ID: {scan_id}...")
     local_video_path = os.path.join(DOWNLOAD_DIR, f"{scan_id}.mp4")
-    
-    # URL tải file từ Inventory Service
     full_url = f"{INVENTORY_SERVICE_URL}/{file_url}".replace("\\", "/")
     
+    cap = None # Khai báo biến cap ở ngoài để finally có thể gọi
+
     try:
+        # 1. Tải file
         with requests.get(full_url, stream=True) as r:
             r.raise_for_status()
             with open(local_video_path, 'wb') as f:
@@ -89,53 +82,38 @@ def process_scan(scan):
                     f.write(chunk)
         
         if os.path.getsize(local_video_path) == 0:
-            raise Exception("File tải về bị rỗng (0 bytes)")
-            
-    except Exception as e:
-        print(f"❌ Không thể tải file: {e}")
-        requests.put(f"{INVENTORY_SERVICE_URL}/scans/{scan_id}", json={"status": "failed"}, headers=get_headers())
-        return
+            raise Exception("File tải về bị rỗng")
 
-    # --- CHẠY AI ---
-    print(f"🧠 Đang chạy AI phân tích...")
-    
-    cap = cv2.VideoCapture(local_video_path)
-    if not cap.isOpened():
-        print("❌ Không mở được file (Lỗi Codec hoặc File hỏng).")
-        requests.put(f"{INVENTORY_SERVICE_URL}/scans/{scan_id}", json={"status": "failed"}, headers=get_headers())
-        return
+        # 2. Xử lý AI
+        print(f"🧠 Đang chạy AI phân tích với model: {MODEL_PATH}...")
+        
+        cap = cv2.VideoCapture(local_video_path)
+        if not cap.isOpened():
+            raise Exception("Không mở được file video")
 
-    # Lấy kích thước frame
-    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    
-    # Nếu không lấy được kích thước (do file lỗi), gán mặc định để tránh crash
-    if w == 0 or h == 0: 
-        w, h = 640, 480
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        if w == 0 or h == 0: w, h = 640, 480
 
-    region_points = [(0, h//2), (w, h//2), (w, h), (0, h)]
+        # Cấu hình vùng đếm (Nửa dưới màn hình)
+        region_points = [(0, h//2), (w, h//2), (w, h), (0, h)]
 
-    try:
-        # Khởi tạo bộ đếm
         counter = solutions.ObjectCounter(
             show=False, 
             region=region_points,
-            model="runs\detect\train2\weights\best.pt",
+            model=MODEL_PATH, # Sử dụng đường dẫn đã sửa
         )
 
         unique_objects = {} 
 
         while cap.isOpened():
             ok, im0 = cap.read()
-            if not ok:
-                break
+            if not ok: break
             
-            # --- SỬA LỖI 4 KÊNH MÀU (RGBA) ---
-            # Nếu ảnh có 4 kênh (PNG trong suốt), chuyển về 3 kênh (BGR)
+            # Fix lỗi ảnh 4 kênh (PNG)
             if im0.shape[2] == 4:
                 im0 = cv2.cvtColor(im0, cv2.COLOR_BGRA2BGR)
             
-            # Gọi trực tiếp object
             results = counter(im0) 
             
             if counter.boxes is not None:
@@ -152,38 +130,41 @@ def process_scan(scan):
                             "id": str(tid)
                         }
 
-        cap.release()
-
-        # Gửi kết quả
+        # 3. Gửi kết quả
         final_results = list(unique_objects.values())
         print(f"⬆️ Đang gửi {len(final_results)} vật thể về Server...")
         
-        res = requests.put(
+        requests.put(
             f"{INVENTORY_SERVICE_URL}/scans/{scan_id}", 
-            json={
-                "status": "completed",
-                "result_data": final_results 
-            }, 
+            json={"status": "completed", "result_data": final_results}, 
             headers=get_headers()
         )
-        
-        if res.status_code == 200:
-            print(f"✅ Hoàn tất Scan ID: {scan_id}")
-        else:
-            print(f"⚠️ Lỗi cập nhật Server: {res.text}")
+        print(f"✅ Hoàn tất Scan ID: {scan_id}")
 
     except Exception as e:
-        print(f"⚠️ Lỗi trong quá trình AI: {e}")
-        requests.put(f"{INVENTORY_SERVICE_URL}/scans/{scan_id}", json={"status": "failed"}, headers=get_headers())
+        print(f"❌ Lỗi xử lý: {e}")
+        # Báo lỗi lên server
+        try:
+            requests.put(f"{INVENTORY_SERVICE_URL}/scans/{scan_id}", json={"status": "failed"}, headers=get_headers())
+        except: pass
     finally:
-        # Dọn dẹp
+        # QUAN TRỌNG: Giải phóng file trước khi xóa
+        if cap is not None:
+            cap.release()
+        
+        # Đợi một chút cho hệ điều hành nhả file
+        time.sleep(0.5)
+        
         if os.path.exists(local_video_path):
-            os.remove(local_video_path)
+            try:
+                os.remove(local_video_path)
+            except Exception as e:
+                print(f"⚠️ Không thể xóa file tạm (không ảnh hưởng): {e}")
 
 if __name__ == "__main__":
     print("🚀 AI Scan Service đang chạy...")
     if not login():
-        print("Vui lòng kiểm tra Auth Service (Port 4000) đang chạy chưa.")
+        print("Vui lòng kiểm tra Auth Service (Port 4000).")
         exit(1)
 
     while True:

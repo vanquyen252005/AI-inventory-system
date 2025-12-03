@@ -5,32 +5,46 @@ interface FetchOptions extends RequestInit {
   headers?: Record<string, string>
 }
 
+// Biến "khóa" để ngăn gọi refresh nhiều lần
+let isRefreshing = false
+let refreshPromise: Promise<string | null> | null = null
+
 export async function fetchWithAuth(url: string, options: FetchOptions = {}) {
   let token = getAccessToken()
 
-  // 1. Chuẩn bị Header
   const headers: Record<string, string> = {
     ...options.headers,
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   }
 
-  // LOGIC MỚI: Chỉ thêm Content-Type: application/json nếu KHÔNG PHẢI là FormData
-  // Nếu là FormData, để trình duyệt tự set (để có boundary)
+  // Tự động set JSON nếu không phải FormData
   if (!(options.body instanceof FormData) && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json"
   }
 
-  // 2. Gọi API lần đầu
   let response = await fetch(url, { ...options, headers })
 
-  // 3. Nếu lỗi 401 (Hết hạn) -> Thử Refresh Token
+  // --- XỬ LÝ KHI TOKEN HẾT HẠN (401) ---
   if (response.status === 401) {
-    console.log("Token hết hạn khi gọi API. Đang thử gia hạn...")
-    
-    const newToken = await refreshAccessToken()
-    
+    if (!isRefreshing) {
+      // Nếu chưa có ai đang refresh, thì mình làm
+      isRefreshing = true
+      refreshPromise = refreshAccessToken()
+        .then((newToken) => {
+          isRefreshing = false
+          return newToken
+        })
+        .catch(() => {
+          isRefreshing = false
+          return null
+        })
+    }
+
+    // Tất cả các request 401 đều phải đợi cái Promise này
+    const newToken = await refreshPromise
+
     if (newToken) {
-      // Refresh thành công -> Gọi lại API với token mới
+      // Có token mới -> Gọi lại API cũ
       headers.Authorization = `Bearer ${newToken}`
       response = await fetch(url, { ...options, headers })
     } else {
@@ -43,7 +57,6 @@ export async function fetchWithAuth(url: string, options: FetchOptions = {}) {
     }
   }
 
-  // 4. Xử lý lỗi chung
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}))
     throw new Error(errorData.message || `Lỗi API: ${response.status}`)
