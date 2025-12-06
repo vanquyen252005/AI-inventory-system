@@ -107,3 +107,16 @@ export async function refreshAccessToken(): Promise<string | null> {
     return null
   }
 }
+export async function loginGoogle(accessToken: string): Promise<AuthResponse> {
+  const res = await fetch(`${AUTH_API_URL}/auth/login/google`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ accessToken }),
+  })
+
+  if (!res.ok) {
+    throw new Error("Đăng nhập Google thất bại")
+  }
+
+  return (await res.json()) as AuthResponse
+}

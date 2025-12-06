@@ -41,6 +41,7 @@ export async function getAssets(params?: {
   search?: string
   category?: string
   status?: string
+  location?: string
   page?: number
   limit?: number
 }): Promise<AssetsResponse> {
@@ -48,6 +49,9 @@ export async function getAssets(params?: {
   if (params?.search) queryParams.append("search", params.search)
   if (params?.category) queryParams.append("category", params.category)
   if (params?.status) queryParams.append("status", params.status)
+  if (params?.location && params.location !== "ALL") {
+    queryParams.append("location", params.location)
+  }
   if (params?.page) queryParams.append("page", params.page.toString())
   if (params?.limit) queryParams.append("limit", params.limit.toString())
 

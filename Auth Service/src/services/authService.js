@@ -1,5 +1,5 @@
 // src/services/authService.js
-
+const axios = require('axios');
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const {
@@ -199,11 +199,79 @@ async function getProfile({ userId }) {
     createdAt: user.created_at,
   };
 }
+async function loginWithGoogle(accessToken) {
+  console.log("--- Bắt đầu xử lý Google Login ---");
+  console.log("Token nhận được:", accessToken ? accessToken.substring(0, 10) + "..." : "KHÔNG CÓ TOKEN");
 
+  try {
+    // Bước 1: Gọi Google API
+    console.log("1. Đang gọi Google API...");
+    const googleRes = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    
+    console.log("2. Google trả về:", googleRes.data);
+    const { sub: googleId, email, name, picture } = googleRes.data;
+
+    if (!email) throw new Error("Google account không có email");
+
+    // Bước 2: Tìm user trong DB
+    console.log("3. Đang tìm user trong DB với email:", email);
+    let user = await userRepo.findByEmail(email);
+
+    if (user) {
+      console.log("-> User đã tồn tại, ID:", user.id);
+      if (!user.google_id) {
+        console.log("-> Đang cập nhật google_id...");
+        await userRepo.updateGoogleId(user.id, googleId);
+      }
+    } else {
+      console.log("-> User chưa có, đang tạo mới...");
+      user = await userRepo.createUser({
+        email,
+        passwordHash: null,
+        fullName: name,
+        role: "USER",
+        googleId
+      });
+    }
+
+    // Bước 3: Tạo Token
+    console.log("4. Đang tạo JWT Token...");
+    const newAccessToken = signAccessToken({ id: user.id, email: user.email, role: user.role });
+    const newRefreshToken = signRefreshToken({ id: user.id });
+    await refreshTokenRepo.createRefreshToken({ userId: user.id, token: newRefreshToken });
+
+    console.log("--- Google Login Thành Công ---");
+    return {
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+      user: { id: user.id, email: user.email, fullName: user.full_name, role: user.role }
+    };
+
+  } catch (error) {
+    // IN LỖI CHI TIẾT RA TERMINAL
+    console.error("!!! LỖI GOOGLE LOGIN !!!");
+    console.error("Message:", error.message);
+    if (error.response) {
+      console.error("Google API Error Data:", error.response.data);
+      console.error("Google API Status:", error.response.status);
+    } else if (error.code === '23505') {
+       console.error("Lỗi trùng lặp Database (Unique constraint)");
+    } else {
+       console.error("Stack trace:", error.stack);
+    }
+    
+    const err = new Error("Xác thực Google thất bại: " + error.message);
+    err.statusCode = 401;
+    throw err;
+  }
+}
 module.exports = {
   register,
   login,
   refresh,
   logout,
   getProfile,
+  loginWithGoogle
 };

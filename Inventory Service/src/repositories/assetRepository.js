@@ -2,7 +2,7 @@ const db = require('../config/db');
 
 class AssetRepository {
   // Lấy danh sách có phân trang và tìm kiếm
-  async findAll({ search, category, status, limit, offset }) {
+  async findAll({ search, category, status,location, limit, offset }) {
     let query = 'SELECT *, count(*) OVER() AS total_count FROM assets WHERE 1=1';
     const params = [];
     let paramIndex = 1;
@@ -25,7 +25,13 @@ class AssetRepository {
       params.push(status);
       paramIndex++;
     }
-
+    // --- CODE MỚI: Thêm logic lọc theo phòng (Location) ---
+    if (location) {
+      // Dùng ILIKE để tìm gần đúng (VD: nhập "201" sẽ ra "GD2 - 201")
+      query += ` AND location ILIKE $${paramIndex}`;
+      params.push(`%${location}%`);
+      paramIndex++;
+    }
     query += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
     params.push(limit, offset);
 

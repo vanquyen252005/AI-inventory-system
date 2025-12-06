@@ -251,5 +251,16 @@ router.get("/me", authGuard(), async (req, res, next) => {
     next(err);
   }
 });
+router.post("/login/google", async (req, res, next) => {
+  try {
+    const { accessToken } = req.body;
+    if (!accessToken) return res.status(400).json({ message: "Thiếu Access Token" });
+
+    const result = await authService.loginWithGoogle(accessToken);
+    return res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
 
 module.exports = router;
