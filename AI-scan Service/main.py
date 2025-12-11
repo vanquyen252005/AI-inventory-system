@@ -1,184 +1,129 @@
 import cv2
 import json
 import os
-import time
-import requests
-import numpy as np
+import mimetypes
 from ultralytics import solutions
 
-# --- CẤU HÌNH KẾT NỐI SERVER ---
-AUTH_SERVICE_URL = "http://localhost:4000"
-INVENTORY_SERVICE_URL = "http://localhost:4001"
+# --- CẤU HÌNH ---
+INPUT_PATH = "ul10.mp4"  
+MODEL_PATH = "best.pt"  
+OUTPUT_DIR = "output_results" 
 
-AUTH_EMAIL = "hung@123"          
-AUTH_PASSWORD = "12345678"                   
-DOWNLOAD_DIR = "temp_downloads"         
+# Chọn class muốn đếm.
+# Để None nghĩa là đếm TẤT CẢ các class mà model nhận diện được.
+CLASSES_TO_COUNT = None 
 
-# Đường dẫn model (SỬA LẠI DÙNG DẤU /)
-MODEL_PATH = "runs/detect/train2/weights/best.pt" 
-# Hoặc nếu file chưa tồn tại thì dùng tạm: MODEL_PATH = "yolov8n.pt"
+if not os.path.exists(OUTPUT_DIR):
+    os.makedirs(OUTPUT_DIR)
 
-if not os.path.exists(DOWNLOAD_DIR):
-    os.makedirs(DOWNLOAD_DIR)
+def get_media_type(filepath):
+    mime_type, _ = mimetypes.guess_type(filepath)
+    if mime_type and mime_type.startswith('image'):
+        return 'image'
+    elif mime_type and mime_type.startswith('video'):
+        return 'video'
+    return 'unknown'
 
-current_token = None
+def process_media():
+    media_type = get_media_type(INPUT_PATH)
+    if media_type == 'unknown':
+        print(f"❌ Không xác định được loại file: {INPUT_PATH}")
+        return
 
-def login():
-    global current_token
-    try:
-        print(f"🔐 Đang đăng nhập vào {AUTH_SERVICE_URL}...")
-        response = requests.post(f"{AUTH_SERVICE_URL}/auth/login", json={
-            "email": AUTH_EMAIL,
-            "password": AUTH_PASSWORD
-        })
-        if response.status_code == 200:
-            data = response.json()
-            if "accessToken" in data:
-                current_token = data["accessToken"]
-            elif "tokens" in data and "access" in data["tokens"]:
-                current_token = data["tokens"]["access"]["token"]
-            print("✅ Đăng nhập thành công!")
-            return True
-        return False
-    except Exception as e:
-        print(f"❌ Lỗi kết nối Login: {e}")
-        return False
-
-def get_headers():
-    if not current_token:
-        login()
-    return {"Authorization": f"Bearer {current_token}"}
-
-def get_pending_scans():
-    try:
-        response = requests.get(f"{INVENTORY_SERVICE_URL}/scans", headers=get_headers())
-        if response.status_code == 401:
-            if login(): return get_pending_scans()
-            return []
-        if response.status_code == 200:
-            scans = response.json()
-            if isinstance(scans, dict) and "scans" in scans: scans = scans["scans"]
-            return [s for s in scans if s.get("status") == "processing"]
-        return []
-    except:
-        return []
-
-def process_scan(scan):
-    scan_id = scan["id"]
-    file_url = scan.get("image_url") or scan.get("imageUrl")
+    base_name = os.path.splitext(os.path.basename(INPUT_PATH))[0]
+    json_out_path = os.path.join(OUTPUT_DIR, f"{base_name}_count.json")
     
-    print(f"⬇️ Đang tải file cho Scan ID: {scan_id}...")
-    local_video_path = os.path.join(DOWNLOAD_DIR, f"{scan_id}.mp4")
-    full_url = f"{INVENTORY_SERVICE_URL}/{file_url}".replace("\\", "/")
+    cap = cv2.VideoCapture(INPUT_PATH)
+    assert cap.isOpened(), f"Error reading file: {INPUT_PATH}"
     
-    cap = None # Khai báo biến cap ở ngoài để finally có thể gọi
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30
+    
+    # Tạo vùng đếm dynamic (cách lề 20px)
+    margin = 20
+    region_points = [(margin, margin), (w-margin, margin), (w-margin, h-margin), (margin, h-margin)]
 
-    try:
-        # 1. Tải file
-        with requests.get(full_url, stream=True) as r:
-            r.raise_for_status()
-            with open(local_video_path, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
+    video_writer = None
+    if media_type == 'video':
+        video_out_path = os.path.join(OUTPUT_DIR, f"{base_name}_output.mp4")
+        video_writer = cv2.VideoWriter(video_out_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+        print(f"🎬 Đang xử lý Video...")
+    else:
+        print(f"📸 Đang xử lý Ảnh...")
+        img_out_path = os.path.join(OUTPUT_DIR, f"{base_name}_output.jpg")
+
+    # Khởi tạo bộ đếm
+    counter = solutions.ObjectCounter(
+        show=True,
+        region=region_points,
+        model=MODEL_PATH,
+        classes=CLASSES_TO_COUNT # Khi để None, nó sẽ đếm tất cả
+    )
+
+    frame_idx = 0
+    final_image = None
+    
+    # Biến lưu danh sách vật thể hiện tại (chỉ dùng cho ảnh tĩnh)
+    current_frame_objects_labels = [] 
+
+    while cap.isOpened():
+        ok, im0 = cap.read()
+        if not ok: break
+
+        # Xử lý frame
+        results = counter(im0)
         
-        if os.path.getsize(local_video_path) == 0:
-            raise Exception("File tải về bị rỗng")
+        # Nếu là ảnh, ta cần lấy danh sách label ngay tại frame này
+        if media_type == 'image':
+            names = counter.names if hasattr(counter, 'names') else {}
+            current_frame_objects_labels = [] # Reset
+            if hasattr(counter, 'boxes') and counter.boxes is not None:
+                for cls in counter.clss:
+                    label = names.get(int(cls), str(int(cls)))
+                    current_frame_objects_labels.append(label)
 
-        # 2. Xử lý AI
-        print(f"🧠 Đang chạy AI phân tích với model: {MODEL_PATH}...")
-        
-        cap = cv2.VideoCapture(local_video_path)
-        if not cap.isOpened():
-            raise Exception("Không mở được file video")
+        if media_type == 'video':
+            video_writer.write(results.plot_im)
+            cv2.imshow("YOLOv11 Counter", results.plot_im)
+            if cv2.waitKey(1) & 0xFF == ord('q'): break
+        else:
+            final_image = results.plot_im
 
-        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        if w == 0 or h == 0: w, h = 640, 480
+        frame_idx += 1
 
-        # Cấu hình vùng đếm (Nửa dưới màn hình)
-        region_points = [(0, h//2), (w, h//2), (w, h), (0, h)]
+    # --- TÍNH TỔNG KẾT QUẢ ---
+    final_summary = {}
 
-        counter = solutions.ObjectCounter(
-            show=False, 
-            region=region_points,
-            model=MODEL_PATH, # Sử dụng đường dẫn đã sửa
-        )
+    if media_type == 'image':
+        # Với ẢNH: Đếm trực tiếp số lượng label xuất hiện
+        for lbl in current_frame_objects_labels:
+            final_summary[lbl] = final_summary.get(lbl, 0) + 1
+    else:
+        # Với VIDEO: Đếm tổng IN + OUT
+        for label, counts in counter.classwise_count.items():
+            total = counts.get("IN", 0) + counts.get("OUT", 0)
+            final_summary[label] = final_summary.get(label, 0) + total
 
-        unique_objects = {} 
+    # --- LƯU FILE JSON (CHỈ LƯU SỐ LƯỢNG) ---
+    # Kết quả sẽ dạng: {"chair": 10, "table": 5, "fan": 2...}
+    with open(json_out_path, "w", encoding="utf-8") as f:
+        json.dump(final_summary, f, ensure_ascii=False, indent=2)
 
-        while cap.isOpened():
-            ok, im0 = cap.read()
-            if not ok: break
-            
-            # Fix lỗi ảnh 4 kênh (PNG)
-            if im0.shape[2] == 4:
-                im0 = cv2.cvtColor(im0, cv2.COLOR_BGRA2BGR)
-            
-            results = counter(im0) 
-            
-            if counter.boxes is not None:
-                for box, tid, cls, conf in zip(counter.boxes, counter.track_ids, counter.clss, counter.confs):
-                    if tid is None: continue 
-                    tid = int(tid)
-                    if tid not in unique_objects:
-                        x1, y1, x2, y2 = map(float, box)
-                        label = counter.names[int(cls)]
-                        unique_objects[tid] = {
-                            "class": label, 
-                            "confidence": float(conf),
-                            "box": [x1, y1, x2, y2],
-                            "id": str(tid)
-                        }
-
-        # 3. Gửi kết quả
-        final_results = list(unique_objects.values())
-        print(f"⬆️ Đang gửi {len(final_results)} vật thể về Server...")
-        
-        requests.put(
-            f"{INVENTORY_SERVICE_URL}/scans/{scan_id}", 
-            json={"status": "completed", "result_data": final_results}, 
-            headers=get_headers()
-        )
-        print(f"✅ Hoàn tất Scan ID: {scan_id}")
-
-    except Exception as e:
-        print(f"❌ Lỗi xử lý: {e}")
-        # Báo lỗi lên server
-        try:
-            requests.put(f"{INVENTORY_SERVICE_URL}/scans/{scan_id}", json={"status": "failed"}, headers=get_headers())
-        except: pass
-    finally:
-        # QUAN TRỌNG: Giải phóng file trước khi xóa
-        if cap is not None:
-            cap.release()
-        
-        # Đợi một chút cho hệ điều hành nhả file
-        time.sleep(0.5)
-        
-        if os.path.exists(local_video_path):
-            try:
-                os.remove(local_video_path)
-            except Exception as e:
-                print(f"⚠️ Không thể xóa file tạm (không ảnh hưởng): {e}")
+    cap.release()
+    if video_writer: video_writer.release()
+    if media_type == 'image' and final_image is not None:
+        cv2.imwrite(img_out_path, final_image)
+        cv2.imshow("Ket qua Anh", final_image)
+        cv2.waitKey(0)
+    
+    cv2.destroyAllWindows()
+    
+    print("\n" + "="*30)
+    print(f"✅ Đã lưu file đếm tại: {json_out_path}")
+    print("Nội dung file JSON:")
+    print(json.dumps(final_summary, ensure_ascii=False, indent=2))
+    print("="*30)
 
 if __name__ == "__main__":
-    print("🚀 AI Scan Service đang chạy...")
-    if not login():
-        print("Vui lòng kiểm tra Auth Service (Port 4000).")
-        exit(1)
-
-    while True:
-        try:
-            pending = get_pending_scans()
-            if pending:
-                print(f"🔍 Tìm thấy {len(pending)} yêu cầu mới.")
-                for scan in pending:
-                    process_scan(scan)
-            else:
-                print(".", end="", flush=True)
-            time.sleep(5)
-        except KeyboardInterrupt:
-            break
-        except Exception as e:
-            print(f"\n⚠️ Lỗi vòng lặp: {e}")
-            time.sleep(5)
+    process_media()
