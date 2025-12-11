@@ -167,7 +167,7 @@ export default function LoginPage() {
               <div className="relative flex justify-center text-sm"><span className="px-2 bg-card text-muted-foreground">hoặc tiếp tục với</span></div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
               {/* 3. Button Google đã tách component */}
               <GoogleLoginButton 
                 onSuccess={handleGoogleSuccess} 
