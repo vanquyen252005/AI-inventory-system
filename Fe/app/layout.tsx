@@ -38,7 +38,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi">
-      <body className={`font-sans antialiased`}>
+      <body className={`font-sans antialiased`}
+      suppressHydrationWarning={true}
+      >
         {children}
         <Analytics />
       </body>

@@ -136,6 +136,21 @@ export default function AssetsPage() {
       .sort((a, b) => a.buildingName.localeCompare(b.buildingName));
 
   }, [assets]);
+  useEffect(() => {
+    if (selectedRoom) {
+      for (const group of buildingGroups) {
+        const freshRoom = group.rooms.find(r => 
+          r.roomName === selectedRoom.roomName && 
+          r.fullLocation === selectedRoom.fullLocation 
+        );
+        
+        if (freshRoom) {
+          setSelectedRoom(freshRoom);
+          return;
+        }
+      }
+    }
+  }, [buildingGroups, selectedRoom]);
 
   // --- ACTIONS ---
   const handleCreate = () => { setEditingAsset(null); setCreateDialogOpen(true); }

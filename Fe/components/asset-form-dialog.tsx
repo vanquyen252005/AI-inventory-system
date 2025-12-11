@@ -270,14 +270,24 @@ export function AssetFormDialog({ open, onOpenChange, onSuccess, assetToEdit }: 
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Tình trạng (%)</label>
-              <Input
-                type="number" min="0" max="100"
-                value={formData.condition}
-                onChange={(e) => setFormData({ ...formData, condition: parseInt(e.target.value) || 100 })}
-              />
-            </div>
+        
+<div>
+  <label className="block text-sm font-medium mb-1">Tình trạng (%)</label>
+  <Input
+    type="number" min="0" max="100"
+    // SỬA 1: Dùng (?? "") để nếu là undefined/null thì hiện rỗng, còn 0 vẫn hiện 0
+    value={formData.condition ?? ""} 
+    
+    // SỬA 2: Nếu value rỗng thì set là undefined, ngược lại mới parse số
+    onChange={(e) => {
+      const val = e.target.value;
+      setFormData({ 
+        ...formData, 
+        condition: val === "" ? undefined : parseInt(val) 
+      });
+    }}
+  />
+</div>
           </div>
 
           <div>

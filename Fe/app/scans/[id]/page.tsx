@@ -34,21 +34,22 @@ export default function ScanDetailPage() {
     }
   }
 
-  // --- LOGIC GỘP NHÓM (GROUPING) ---
+  // --- LOGIC GỘP NHÓM HIỂN THỊ ---
   const groupedResults = useMemo(() => {
     if (!scan?.result_data) return []
     
+    // Key bây giờ vẫn giữ nguyên là class gốc (vd: chair-good) để logic Loop hoạt động đúng
     const groups: Record<string, { count: number; confidenceSum: number; class: string }> = {}
     
     scan.result_data.forEach((item) => {
-      // Chuẩn hóa tên lớp (ví dụ: "chair" -> "Chair")
-      const className = item.class.charAt(0).toUpperCase() + item.class.slice(1)
+      // Giữ nguyên tên class gốc để group không bị lẫn lộn giữa chair-good và chair-bad
+      const key = item.class 
       
-      if (!groups[className]) {
-        groups[className] = { count: 0, confidenceSum: 0, class: className }
+      if (!groups[key]) {
+        groups[key] = { count: 0, confidenceSum: 0, class: key }
       }
-      groups[className].count += 1
-      groups[className].confidenceSum += item.confidence
+      groups[key].count += 1
+      groups[key].confidenceSum += item.confidence
     })
 
     return Object.values(groups).map(g => ({
@@ -57,7 +58,7 @@ export default function ScanDetailPage() {
     }))
   }, [scan?.result_data])
 
-  // --- LOGIC LƯU VÀO KHO ---
+  // --- LOGIC LƯU VÀO KHO (ĐÃ SỬA TÊN & TÌNH TRẠNG) ---
   const handleSaveToInventory = async () => {
     if (!scan || !groupedResults.length) return
     
@@ -66,30 +67,59 @@ export default function ScanDetailPage() {
     try {
       setIsSaving(true)
       
-      // 1. Chuẩn bị dữ liệu để lưu
-      // Chúng ta sẽ tạo N tài sản ứng với số lượng đếm được
-      // Ví dụ: Đếm được 5 cái Ghế -> Tạo 5 bản ghi "Ghế (AI Scan)"
       const assetsToCreate: CreateAssetPayload[] = [] 
       
       for (const group of groupedResults) {
+        // 1. Xử lý tách chuỗi: "chair-good" -> Name: Chair, Condition: 90
+        const rawClass = group.class.toLowerCase(); 
+        
+        let baseName = group.class; // Tên mặc định
+        let condition = 100;        // Mặc định mới 100%
+        let status: "active" | "maintenance" | "inactive" = "active";
+        let descriptionNote = "";
+
+        // Logic phân loại Good/Bad/Medium
+        if (rawClass.includes("good")) {
+          // Xóa chữ -good, good đi
+          baseName = rawClass.replace(/-?good/g, "").trim();
+          condition = 95; 
+          status = "active";
+          descriptionNote = "Tình trạng tốt (AI Scan)";
+        } 
+        else if (rawClass.includes("bad") || rawClass.includes("broken")) {
+          baseName = rawClass.replace(/-?(bad|broken)/g, "").trim();
+          condition = 30; // Hỏng
+          status = "maintenance"; 
+          descriptionNote = "Hư hỏng cần sửa chữa (AI Scan)";
+        }
+        else if (rawClass.includes("medium")) {
+            baseName = rawClass.replace(/-?medium/g, "").trim();
+            condition = 70; 
+            status = "active";
+            descriptionNote = "Tình trạng trung bình (AI Scan)";
+        }
+
+        // Viết hoa chữ cái đầu cho đẹp (project -> Project)
+        baseName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
+
+        // 2. Tạo bản ghi
         for (let i = 0; i < group.count; i++) {
           assetsToCreate.push({
-            name: `${group.class} (AI-${scan.scan_code.slice(-4)})`,
-            category: group.class,
+            name: `${baseName} (AI-${scan.scan_code.slice(0, 6)})`, // Tên gọn hơn
+            category: baseName,
             location: scan.location || "Chưa xác định",
-            // Hoặc dùng: status: "active" as const,
-            status: "active", 
+            status: status,
             value: 0,
-            condition: 100,
-            description: `Tự động thêm từ phiên quét AI: ${scan.scan_code}`
+            condition: condition, // Đã cập nhật theo AI
+            description: `Tự động thêm từ phiên quét. ${descriptionNote}`
           })
         }
       }
-      // 2. Gọi API Bulk Create
+
       await createBulkAssets(assetsToCreate)
       
-      alert("Đã lưu tài sản thành công!")
-      router.push("/assets") // Chuyển hướng về trang danh sách tài sản
+      alert("Đã lưu tài sản thành công! Tên và tình trạng đã được chuẩn hóa.")
+      router.push("/assets") 
       
     } catch (error) {
       alert("Lỗi khi lưu: " + (error instanceof Error ? error.message : "Không xác định"))
