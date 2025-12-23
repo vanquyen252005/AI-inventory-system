@@ -1,129 +1,231 @@
 import cv2
-import json
 import os
-import mimetypes
-from ultralytics import solutions
+import json
+import time 
+from collections import Counter, defaultdict
+from ultralytics import YOLO
 
-# --- CẤU HÌNH ---
-INPUT_PATH = "ul10.mp4"  
-MODEL_PATH = "best.pt"  
-OUTPUT_DIR = "output_results" 
+# ======================
+# CONFIG
+# ======================
+INPUT_PATH = "video demo/6.png"
+MODEL_PATH = "run/ban2/best.pt"
+OUTPUT_DIR = "output_results"
 
-# Chọn class muốn đếm.
-# Để None nghĩa là đếm TẤT CẢ các class mà model nhận diện được.
-CLASSES_TO_COUNT = None 
+# Chỉ đếm các class này (None = đếm tất cả)
+# CLASSES_TO_COUNT = ["chair-good", "table-good", "fan-good"]
+CLASSES_TO_COUNT = None
 
-if not os.path.exists(OUTPUT_DIR):
-    os.makedirs(OUTPUT_DIR)
+CONF = 0.55
+IOU = 0.55
+SLOW_MS = 200
+SAVE_VIDEO = True
+PRINT_EVERY = 30
 
-def get_media_type(filepath):
-    mime_type, _ = mimetypes.guess_type(filepath)
-    if mime_type and mime_type.startswith('image'):
-        return 'image'
-    elif mime_type and mime_type.startswith('video'):
-        return 'video'
-    return 'unknown'
+# Tăng tốc: chỉ xử lý 1 mỗi N frame
+FRAME_STRIDE = 1
 
-def process_media():
-    media_type = get_media_type(INPUT_PATH)
-    if media_type == 'unknown':
-        print(f"❌ Không xác định được loại file: {INPUT_PATH}")
-        return
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    base_name = os.path.splitext(os.path.basename(INPUT_PATH))[0]
-    json_out_path = os.path.join(OUTPUT_DIR, f"{base_name}_count.json")
-    
+def allowed(label: str) -> bool:
+    return (CLASSES_TO_COUNT is None) or (label in CLASSES_TO_COUNT)
+
+def _iou_xyxy(a, b):
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    inter_x1 = max(ax1, bx1)
+    inter_y1 = max(ay1, by1)
+    inter_x2 = min(ax2, bx2)
+    inter_y2 = min(ay2, by2)
+    iw = max(0.0, inter_x2 - inter_x1)
+    ih = max(0.0, inter_y2 - inter_y1)
+    inter = iw * ih
+    if inter <= 0:
+        return 0.0
+    area_a = max(0.0, ax2-ax1) * max(0.0, ay2-ay1)
+    area_b = max(0.0, bx2-bx1) * max(0.0, by2-by1)
+    return inter / (area_a + area_b - inter + 1e-9)
+
+def _contain_ratio_xyxy(small, big):
+    # intersection / area_small  (small nằm trong big càng nhiều => ratio càng gần 1)
+    sx1, sy1, sx2, sy2 = small
+    bx1, by1, bx2, by2 = big
+    inter_x1 = max(sx1, bx1)
+    inter_y1 = max(sy1, by1)
+    inter_x2 = min(sx2, bx2)
+    inter_y2 = min(sy2, by2)
+    iw = max(0.0, inter_x2 - inter_x1)
+    ih = max(0.0, inter_y2 - inter_y1)
+    inter = iw * ih
+    area_s = max(0.0, sx2-sx1) * max(0.0, sy2-sy1) + 1e-9
+    return inter / area_s
+
+def dets_to_json(r, names, W, H):
+    objects = []
+    counts = Counter()
+
+    if r.boxes is None or len(r.boxes) == 0:
+        return {"counts": {}, "objects": []}
+
+    xyxys = r.boxes.xyxy.cpu().numpy()
+    confs = r.boxes.conf.cpu().numpy()
+    clss  = r.boxes.cls.cpu().numpy().astype(int)
+
+    # --- gom candidate theo label ---
+    by_label = defaultdict(list)
+    for xyxy, conf, cid in zip(xyxys, confs, clss):
+        label = names.get(int(cid), str(int(cid)))
+        if not allowed(label):
+            continue
+        by_label[label].append((list(map(float, xyxy)), float(conf), int(cid)))
+
+    # --- lọc trùng riêng cho table-good ---
+    IOU_DUP = 0.25        # nếu overlap nhiều -> coi là trùng
+    CONTAIN_DUP = 0.85    # nếu box nhỏ nằm trong box lớn >85% -> coi là trùng
+
+    if "table-good" in by_label:
+        cand = sorted(by_label["table-good"], key=lambda x: x[1], reverse=True)  # sort by conf desc
+        kept = []
+        for box, conf, cid in cand:
+            dup = False
+            for kbox, kconf, kcid in kept:
+                iou = _iou_xyxy(box, kbox)
+                contain = max(_contain_ratio_xyxy(box, kbox), _contain_ratio_xyxy(kbox, box))
+                if iou > IOU_DUP or contain > CONTAIN_DUP:
+                    dup = True
+                    break
+            if not dup:
+                kept.append((box, conf, cid))
+        by_label["table-good"] = kept
+
+    # --- build objects + counts ---
+    for label, items in by_label.items():
+        for box, conf, cid in items:
+            x1, y1, x2, y2 = box
+            cx = (x1 + x2) / 2.0
+            cy = (y1 + y2) / 2.0
+
+            counts[label] += 1
+            objects.append({
+                "label": label,
+                "confidence": float(conf),
+                "bbox_xyxy": [x1, y1, x2, y2],
+                "center_xy": [cx, cy],
+                "bbox_normalized": [x1/W, y1/H, x2/W, y2/H],
+            })
+
+    return {"counts": dict(counts), "objects": objects}
+
+
+def main():
+    model = YOLO(MODEL_PATH)
+    names = model.names
+
     cap = cv2.VideoCapture(INPUT_PATH)
     assert cap.isOpened(), f"Error reading file: {INPUT_PATH}"
-    
-    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
-    
-    # Tạo vùng đếm dynamic (cách lề 20px)
-    margin = 20
-    region_points = [(margin, margin), (w-margin, margin), (w-margin, h-margin), (margin, h-margin)]
 
-    video_writer = None
-    if media_type == 'video':
-        video_out_path = os.path.join(OUTPUT_DIR, f"{base_name}_output.mp4")
-        video_writer = cv2.VideoWriter(video_out_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
-        print(f"🎬 Đang xử lý Video...")
-    else:
-        print(f"📸 Đang xử lý Ảnh...")
-        img_out_path = os.path.join(OUTPUT_DIR, f"{base_name}_output.jpg")
+    base = os.path.splitext(os.path.basename(INPUT_PATH))[0]
+    json_out = os.path.join(OUTPUT_DIR, f"{base}_bestframe_objects.json")
+    video_out = os.path.join(OUTPUT_DIR, f"{base}_output_easy.mp4")
 
-    # Khởi tạo bộ đếm
-    counter = solutions.ObjectCounter(
-        show=True,
-        region=region_points,
-        model=MODEL_PATH,
-        classes=CLASSES_TO_COUNT # Khi để None, nó sẽ đếm tất cả
-    )
+    writer = None
+    if SAVE_VIDEO:
+        writer = cv2.VideoWriter(video_out, cv2.VideoWriter_fourcc(*"mp4v"), fps, (W, H))
 
-    frame_idx = 0
-    final_image = None
-    
-    # Biến lưu danh sách vật thể hiện tại (chỉ dùng cho ảnh tĩnh)
-    current_frame_objects_labels = [] 
+    best_frame_idx = -1
+    best_total = -1
+    best_frame_bgr = None
 
-    while cap.isOpened():
-        ok, im0 = cap.read()
-        if not ok: break
+    idx = 0
+    processed = 0
 
-        # Xử lý frame
-        results = counter(im0)
-        
-        # Nếu là ảnh, ta cần lấy danh sách label ngay tại frame này
-        if media_type == 'image':
-            names = counter.names if hasattr(counter, 'names') else {}
-            current_frame_objects_labels = [] # Reset
-            if hasattr(counter, 'boxes') and counter.boxes is not None:
-                for cls in counter.clss:
-                    label = names.get(int(cls), str(int(cls)))
-                    current_frame_objects_labels.append(label)
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
 
-        if media_type == 'video':
-            video_writer.write(results.plot_im)
-            cv2.imshow("YOLOv11 Counter", results.plot_im)
-            if cv2.waitKey(1) & 0xFF == ord('q'): break
-        else:
-            final_image = results.plot_im
+        # chỉ xử lý mỗi FRAME_STRIDE frame
+        if idx % FRAME_STRIDE != 0:
+            if writer is not None:
+                writer.write(frame)
+            idx += 1
+            continue
 
-        frame_idx += 1
+        r = model.predict(frame, conf=CONF, iou=IOU, verbose=False)[0]
+        time.sleep(SLOW_MS / 1000.0)
+        # đếm nhanh số object trong frame (sau lọc class)
+        frame_count = 0
+        if r.boxes is not None and len(r.boxes) > 0:
+            cls_ids = r.boxes.cls.cpu().numpy().astype(int)
+            for cid in cls_ids:
+                label = names.get(int(cid), str(int(cid)))
+                if allowed(label):
+                    frame_count += 1
 
-    # --- TÍNH TỔNG KẾT QUẢ ---
-    final_summary = {}
+        # cập nhật best frame (frame có tổng object nhiều nhất)
+        if frame_count > best_total:
+            best_total = frame_count
+            best_frame_idx = idx
+            best_frame_bgr = frame.copy()
 
-    if media_type == 'image':
-        # Với ẢNH: Đếm trực tiếp số lượng label xuất hiện
-        for lbl in current_frame_objects_labels:
-            final_summary[lbl] = final_summary.get(lbl, 0) + 1
-    else:
-        # Với VIDEO: Đếm tổng IN + OUT
-        for label, counts in counter.classwise_count.items():
-            total = counts.get("IN", 0) + counts.get("OUT", 0)
-            final_summary[label] = final_summary.get(label, 0) + total
+        # ghi video output (vẽ bbox)
+        if writer is not None:
+            writer.write(r.plot())
 
-    # --- LƯU FILE JSON (CHỈ LƯU SỐ LƯỢNG) ---
-    # Kết quả sẽ dạng: {"chair": 10, "table": 5, "fan": 2...}
-    with open(json_out_path, "w", encoding="utf-8") as f:
-        json.dump(final_summary, f, ensure_ascii=False, indent=2)
+        if processed % max(1, (PRINT_EVERY // max(1, FRAME_STRIDE))) == 0:
+            print(f"{idx}: total_objects_in_frame={frame_count}")
+
+        idx += 1
+        processed += 1
 
     cap.release()
-    if video_writer: video_writer.release()
-    if media_type == 'image' and final_image is not None:
-        cv2.imwrite(img_out_path, final_image)
-        cv2.imshow("Ket qua Anh", final_image)
-        cv2.waitKey(0)
-    
-    cv2.destroyAllWindows()
-    
-    print("\n" + "="*30)
-    print(f"✅ Đã lưu file đếm tại: {json_out_path}")
-    print("Nội dung file JSON:")
-    print(json.dumps(final_summary, ensure_ascii=False, indent=2))
-    print("="*30)
+    if writer:
+        writer.release()
+
+    # Nếu không tìm được frame tốt
+    if best_frame_bgr is None:
+        payload = {
+            "error": "No frames processed / best frame not found",
+            "input": INPUT_PATH
+        }
+        with open(json_out, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    # Chạy lại YOLO trên best frame để lấy bbox + conf chính xác và xuất JSON
+    best_r = model.predict(best_frame_bgr, conf=CONF, iou=IOU, verbose=False)[0]
+    det_json = dets_to_json(best_r, names, W, H)
+
+    payload = {
+        "input": INPUT_PATH,
+        "model": MODEL_PATH,
+        "frame_size": {"width": W, "height": H},
+        "best_frame_index": best_frame_idx,
+        "params": {
+            "CONF": CONF,
+            "IOU": IOU,
+            "FRAME_STRIDE": FRAME_STRIDE,
+            "CLASSES_TO_COUNT": CLASSES_TO_COUNT
+        },
+        "counts": det_json["counts"],      # số lượng theo từng class ở best frame
+        "objects": det_json["objects"]     # vị trí từng object (bbox)
+    }
+
+    with open(json_out, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+    print("\n" + "=" * 30)
+    print(f"✅ Saved JSON: {json_out}")
+    print("✅ JSON content:")
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    if SAVE_VIDEO:
+        print(f"✅ Saved output video: {video_out}")
+    print("=" * 30)
 
 if __name__ == "__main__":
-    process_media()
+    main()
