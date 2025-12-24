@@ -7,13 +7,13 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog" 
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Search, Plus, Edit2, Trash2, MapPin, Box, Monitor, Armchair, ArrowRightLeft, X, Save } from "lucide-react" 
+import { Search, Plus, Edit2, Trash2, MapPin, Box, Monitor, Armchair, ArrowRightLeft, X, Save, Image as ImageIcon } from "lucide-react" 
 import { useState, useEffect, useMemo } from "react"
 import { AssetFormDialog, ASSET_CATEGORIES } from "@/components/asset-form-dialog"
 import { getAssets, deleteAsset, updateAsset, type Asset } from "@/lib/inventory-service"
 import { cn } from "@/lib/utils"
 
-// --- CONSTANTS: ĐỊA ĐIỂM (Đồng bộ với form thêm mới) ---
+// --- CONSTANTS ---
 const ROOMS_BY_HALL: Record<string, string[]> = {
   "G2": ["101", "102", "201", "202", "301", "302", "305", "Phòng Giáo Viên"],
   "GD2": ["201", "202", "301", "302", "401", "402", "Hội trường lớn"],
@@ -49,13 +49,16 @@ export default function AssetsPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
   const [selectedRoom, setSelectedRoom] = useState<RoomSummary | null>(null)
+  
+  // State xem ảnh bằng chứng
+  const [viewingAsset, setViewingAsset] = useState<Asset | null>(null);
 
-  // Move Asset State (Đã nâng cấp)
+  // Move Asset State
   const [moveDialogOpen, setMoveDialogOpen] = useState(false)
   const [assetToMove, setAssetToMove] = useState<Asset | null>(null)
   
-  const [moveHall, setMoveHall] = useState("G2")   // State cho tòa nhà đích
-  const [moveRoom, setMoveRoom] = useState("")     // State cho phòng đích
+  const [moveHall, setMoveHall] = useState("G2")   
+  const [moveRoom, setMoveRoom] = useState("")     
 
   // --- FETCH DATA ---
   useEffect(() => {
@@ -88,24 +91,19 @@ export default function AssetsPage() {
       let room = "Chưa phân loại";
       const loc = asset.location || "";
       
-      // Parse logic: "GD2 - 201"
       if (loc.includes(" - ")) {
         const parts = loc.split(" - ");
         if (parts.length >= 2) {
-            // Kiểm tra xem phần đầu có phải là ID của Hall không (G2, GD2...)
             const hallId = parts[0].trim();
             const isKnownHall = LECTURE_HALLS.some(h => h.id === hallId);
-            
             if (isKnownHall) {
                 building = hallId;
                 room = parts.slice(1).join(" - ").trim();
             } else {
-                building = loc; // Hoặc logic khác tùy dữ liệu cũ
+                building = loc; 
             }
         }
       } else if (loc) {
-        // Nếu không có dấu gạch ngang, thử tìm xem nó có thuộc tòa nào không (để gom nhóm đẹp hơn)
-        // Nhưng ở đây ta cứ gom vào chính nó
         building = loc;
       }
 
@@ -136,6 +134,7 @@ export default function AssetsPage() {
       .sort((a, b) => a.buildingName.localeCompare(b.buildingName));
 
   }, [assets]);
+
   useEffect(() => {
     if (selectedRoom) {
       for (const group of buildingGroups) {
@@ -165,11 +164,10 @@ export default function AssetsPage() {
     }
   }
 
-  // --- LOGIC DI CHUYỂN TÀI SẢN (NÂNG CẤP) ---
+  // --- LOGIC DI CHUYỂN TÀI SẢN ---
   const openMoveDialog = (asset: Asset) => {
     setAssetToMove(asset);
     
-    // Parse location cũ để điền sẵn vào form
     let foundHallId = "OTHER";
     let foundRoom = asset.location || "";
 
@@ -186,10 +184,8 @@ export default function AssetsPage() {
     setMoveDialogOpen(true);
   }
 
-  // Tự động reset phòng khi đổi tòa nhà trong Move Dialog
   useEffect(() => {
     if (moveDialogOpen && moveHall !== "OTHER" && ROOMS_BY_HALL[moveHall]) {
-       // Nếu phòng hiện tại không thuộc tòa nhà mới chọn -> reset về phòng đầu tiên
        if (!ROOMS_BY_HALL[moveHall].includes(moveRoom)) {
           setMoveRoom(ROOMS_BY_HALL[moveHall][0]);
        }
@@ -199,7 +195,6 @@ export default function AssetsPage() {
   const handleMoveSubmit = async () => {
     if (!assetToMove) return;
     
-    // Ghép chuỗi location mới
     let finalLocation = moveRoom;
     if (moveHall !== "OTHER") {
         finalLocation = `${moveHall} - ${moveRoom}`;
@@ -217,7 +212,6 @@ export default function AssetsPage() {
       setAssetToMove(null);
       await loadAssets();
       
-      // Update local state nếu đang xem chi tiết phòng
       if (selectedRoom) {
          setSelectedRoom(prev => prev ? ({
              ...prev,
@@ -229,7 +223,7 @@ export default function AssetsPage() {
     }
   }
 
-  // --- HELPERS & STYLES ---
+  // --- HELPERS ---
   const getCategoryIcon = (category: string) => {
     const cat = category.toLowerCase();
     if (cat.includes("máy tính") || cat.includes("pc")) return <Monitor className="w-3 h-3" />;
@@ -241,6 +235,43 @@ export default function AssetsPage() {
     if (status === 'active') return "text-green-600 bg-green-50 border-green-200";
     if (status === 'maintenance') return "text-orange-600 bg-orange-50 border-orange-200";
     return "text-red-600 bg-red-50 border-red-200";
+  }
+
+  // --- RENDER MODAL XEM ẢNH ---
+  const renderEvidenceModal = () => {
+      if(!viewingAsset || !viewingAsset.evidence_url) return null;
+
+      // Xử lý URL
+      let imgUrl = viewingAsset.evidence_url;
+      if (imgUrl && !imgUrl.startsWith('http')) {
+          imgUrl = `${process.env.NEXT_PUBLIC_INVENTORY_API_URL}/${imgUrl}`;
+      }
+
+      // Xử lý BBox
+      let box = viewingAsset.evidence_bbox;
+      if (typeof box === 'string') {
+          try { box = JSON.parse(box); } catch(e) {}
+      }
+
+      const boxStyle: React.CSSProperties = (Array.isArray(box)) ? {
+        position: 'absolute',
+        left: `${box[0] * 100}%`,
+        top: `${box[1] * 100}%`,
+        width: `${(box[2] - box[0]) * 100}%`,
+        height: `${(box[3] - box[1]) * 100}%`,
+        border: '3px solid #ef4444', 
+        zIndex: 20
+      } : {};
+
+      return (
+        <div className="relative w-full aspect-video bg-black flex items-center justify-center rounded overflow-hidden">
+             <button onClick={() => setViewingAsset(null)} className="absolute top-2 right-2 z-50 bg-black/60 hover:bg-red-600 text-white p-2 rounded-full transition-colors">
+                <X className="w-5 h-5"/>
+             </button>
+             <img src={imgUrl} className="w-full h-full object-contain" />
+             {Array.isArray(box) && <div style={boxStyle}></div>}
+        </div>
+      )
   }
 
   const selectClass = "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
@@ -360,6 +391,7 @@ export default function AssetsPage() {
                            <th className="py-3 px-4">Tên thiết bị</th>
                            <th className="py-3 px-4">Loại</th>
                            <th className="py-3 px-4 text-center">Tình trạng</th>
+                           <th className="py-3 px-4 text-center">Ảnh</th>
                            <th className="py-3 px-6 text-right">Giá trị</th>
                            <th className="py-3 px-4 text-right">Thao tác</th>
                         </tr>
@@ -374,6 +406,14 @@ export default function AssetsPage() {
                                  <Badge variant="outline" className={cn("font-normal border-0", getStatusColor(asset.status))}>
                                     {asset.condition}%
                                  </Badge>
+                              </td>
+                              {/* CỘT XEM ẢNH */}
+                              <td className="py-3 px-4 text-center">
+                                  {asset.evidence_url ? (
+                                      <Button variant="ghost" size="sm" onClick={() => setViewingAsset(asset)} className="h-8 w-8 p-0 hover:bg-blue-100 rounded-full">
+                                          <ImageIcon className="w-4 h-4 text-blue-600" />
+                                      </Button>
+                                  ) : <span className="text-muted-foreground text-xs">-</span>}
                               </td>
                               <td className="py-3 px-6 text-right font-mono text-slate-600">
                                  {new Intl.NumberFormat('vi-VN').format(asset.value || 0)}
@@ -405,7 +445,14 @@ export default function AssetsPage() {
           </DialogContent>
         </Dialog>
 
-        {/* DIALOG DI CHUYỂN (MOVE) - ĐÃ CẬP NHẬT GIAO DIỆN CHỌN ĐỊA ĐIỂM */}
+        {/* DIALOG XEM ẢNH BẰNG CHỨNG */}
+        <Dialog open={!!viewingAsset} onOpenChange={(o)=>!o && setViewingAsset(null)}>
+            <DialogContent className="max-w-4xl w-full p-0 bg-black border-zinc-800">
+                {renderEvidenceModal()}
+            </DialogContent>
+        </Dialog>
+
+        {/* DIALOG DI CHUYỂN (MOVE) */}
         <Dialog open={moveDialogOpen} onOpenChange={setMoveDialogOpen}>
           <DialogContent className="sm:max-w-[450px]">
             <DialogHeader>

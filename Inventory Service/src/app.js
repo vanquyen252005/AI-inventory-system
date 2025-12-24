@@ -15,7 +15,12 @@ const scanRoutesV2 = require("./routes/v2_scanRoutes"); // Route v2 (Mới)
 const reportRoutes = require("./routes/reportRoutes");
 const path = require("path");
 const app = express();
-
+app.use(cors({
+    origin: '*', 
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    credentials: true
+}));
+app.use('/output_results', express.static(path.join(__dirname, '../../AI-scan Service/output_results')));
 // 1. Security Headers (Bảo mật)
 app.use(helmet());
 
@@ -30,8 +35,16 @@ app.use(metricsMiddleware);
 
 // 5. Body Parsing
 app.use(express.json());
+const staticOptions = {
+    setHeaders: (res, path, stat) => {
+        // Cho phép load tài nguyên từ tên miền/port khác
+        res.set('Cross-Origin-Resource-Policy', 'cross-origin'); 
+        res.set('Access-Control-Allow-Origin', '*');
+    }
+};
 app.use(express.urlencoded({ extended: true }));
-app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+app.use('/uploads', express.static(path.join(__dirname, '../uploads'), staticOptions));
+app.use('/output_results', express.static(path.join(__dirname, '../../AI-scan Service/output_results'), staticOptions));
 // 6. Request Logging
 app.use((req, res, next) => {
   logger.info(`${req.method} ${req.path}`);

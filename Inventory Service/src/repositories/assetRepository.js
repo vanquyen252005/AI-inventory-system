@@ -104,13 +104,15 @@ class AssetRepository {
   async createMany(assets) {
     if (!assets || assets.length === 0) return [];
 
-    // Tạo placeholders ($1, $2...), ($8, $9...)...
+    // Tạo placeholders ($1, $2...), ($10, $11...)...
     const placeholders = [];
     const values = [];
     let paramIndex = 1;
 
     assets.forEach(asset => {
-      placeholders.push(`($${paramIndex}, $${paramIndex+1}, $${paramIndex+2}, $${paramIndex+3}, $${paramIndex+4}, $${paramIndex+5}, $${paramIndex+6})`);
+      // Chúng ta có 9 trường dữ liệu cho mỗi asset
+      placeholders.push(`($${paramIndex}, $${paramIndex+1}, $${paramIndex+2}, $${paramIndex+3}, $${paramIndex+4}, $${paramIndex+5}, $${paramIndex+6}, $${paramIndex+7}, $${paramIndex+8})`);
+      
       values.push(
         asset.name, 
         asset.category, 
@@ -118,18 +120,24 @@ class AssetRepository {
         asset.status || 'active', 
         asset.value || 0, 
         asset.condition || 100, 
-        asset.description || ''
+        asset.description || '',
+        // --- THÊM 2 TRƯỜNG MỚI ---
+        asset.evidence_url || null,        // $paramIndex+7
+        asset.evidence_bbox ? JSON.stringify(asset.evidence_bbox) : null // $paramIndex+8 (Lưu bbox dưới dạng JSON string nếu DB không tự parse)
       );
-      paramIndex += 7;
+      
+      paramIndex += 9; // Tăng bước nhảy lên 9
     });
 
     const sql = `
-      INSERT INTO assets (name, category, location, status, value, condition, description)
+      INSERT INTO assets (
+        name, category, location, status, value, condition, description, 
+        evidence_url, evidence_bbox
+      )
       VALUES ${placeholders.join(', ')}
       RETURNING *
     `;
 
-    // Sửa 'query' thành 'db.query'
     const result = await db.query(sql, values);
     return result.rows;
   }

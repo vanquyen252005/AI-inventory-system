@@ -9,104 +9,118 @@ class ScanService {
 
   async getScanById(id) {
     const scan = await scanRepository.findById(id);
-    if (!scan) {
-      throw new Error("Scan not found");
-    }
+    if (!scan) throw new Error("Scan not found");
     return scan;
   }
 
   async createScanRecord(fileData) {
+    // [FIX] Xử lý đường dẫn: Chỉ lấy phần tương đối (vd: uploads/file.mp4)
+    // Nếu fileData.path là tuyệt đối (D:\...), ta cắt lấy từ 'uploads' trở đi
+    let relativePath = fileData.path;
+    if (relativePath.includes('uploads')) {
+        // Lấy chuỗi bắt đầu từ chữ 'uploads'
+        // Ví dụ: D:\Project\uploads\file.mp4 -> uploads\file.mp4
+        relativePath = relativePath.substring(relativePath.lastIndexOf('uploads')); 
+    }
+    // Chuẩn hóa dấu gạch chéo cho web (chuyển \ thành /)
+    relativePath = relativePath.replace(/\\/g, '/');
+
     const newScan = await scanRepository.create({
       scan_code: fileData.filename,
-      image_url: fileData.path,
+      image_url: relativePath, // <-- Lưu đường dẫn sạch vào DB
       status: 'processing',
       location: fileData.location 
     });
 
-    this.triggerAIProcessing(newScan.id, fileData.path);
+    // Truyền đường dẫn GỐC (tuyệt đối) cho AI xử lý (vì Python cần đường dẫn thật)
+    this.triggerAIProcessing(newScan.id, fileData.path); 
     return newScan;
   }
 
-  // --- HÀM GỌI PYTHON (ĐÃ NÂNG CẤP) ---
   triggerAIProcessing(scanId, filePath) {
     console.log(`[AI] Bắt đầu xử lý Scan ID: ${scanId}...`);
 
     const aiServiceDir = path.resolve(__dirname, '../../../AI-scan Service');
-    const pythonScriptPath = path.join(aiServiceDir, 'main.py');
+    // Đảm bảo trỏ đúng file main.py
+    const pythonScriptPath = path.join(aiServiceDir, 'main.py'); 
     const absoluteFilePath = path.resolve(filePath);
 
-    // Chạy Python với cwd là thư mục AI-scan Service để nhận diện file best.pt
     const pythonProcess = spawn('python', [pythonScriptPath, absoluteFilePath], {
       cwd: aiServiceDir
     });
 
     let dataString = '';
 
-    // Thu thập toàn bộ log
     pythonProcess.stdout.on('data', (data) => {
       dataString += data.toString();
     });
 
-    // Log lỗi nếu có
     pythonProcess.stderr.on('data', (data) => {
-      // Bỏ qua các log thông báo của YOLO (không phải lỗi process)
-      const msg = data.toString();
-      if (!msg.includes("Speed:") && !msg.includes("frames")) {
-          console.error(`[AI Log]: ${msg}`);
-      }
+      console.error(`[AI Log]: ${data.toString()}`);
     });
 
     pythonProcess.on('close', async (code) => {
       if (code === 0) {
         try {
-          // 1. Tìm JSON nằm ở CUỐI CÙNG của output (tránh log rác ban đầu)
-          const jsonStartIndex = dataString.lastIndexOf('{');
-          const jsonEndIndex = dataString.lastIndexOf('}');
+          // --- LOGIC PARSE MỚI (Dùng Marker để cắt chuỗi chính xác) ---
+          const startMarker = "RAW_JSON_START";
+          const endMarker = "RAW_JSON_END";
           
-          if (jsonStartIndex !== -1 && jsonEndIndex !== -1) {
-            let jsonStr = dataString.substring(jsonStartIndex, jsonEndIndex + 1);
+          const startIndex = dataString.indexOf(startMarker);
+          const endIndex = dataString.lastIndexOf(endMarker);
 
-            // [FIX QUAN TRỌNG] Tự động thay thế Single Quote (') thành Double Quote (")
-            // Để xử lý trường hợp Python in ra Dictionary: {'chair': 5} -> {"chair": 5}
-            if (jsonStr.includes("'")) {
-                jsonStr = jsonStr.replace(/'/g, '"');
+          if (startIndex !== -1 && endIndex !== -1) {
+            // Cắt đúng đoạn JSON nằm giữa 2 marker
+            let jsonStr = dataString.substring(startIndex + startMarker.length, endIndex);
+            console.log("[AI Raw JSON Found]"); // Log ngắn gọn để debug
+            
+            const resultData = JSON.parse(jsonStr);
+            const finalDetectionList = [];
+
+            // 1. Format mới: Có mảng objects chứa tọa độ
+            if (resultData.objects && Array.isArray(resultData.objects)) {
+                resultData.objects.forEach(obj => {
+                    finalDetectionList.push({
+                        class: obj.label,
+                        confidence: obj.confidence,
+                        box: obj.bbox_normalized, // [x1, y1, x2, y2]
+                        frameIndex: resultData.best_frame_index
+                    });
+                });
+            } 
+            // 2. Fallback Format cũ (chỉ đếm số lượng)
+            else if (resultData.counts) {
+                Object.keys(resultData.counts).forEach(cls => {
+                    const count = resultData.counts[cls];
+                    for(let i=0; i<count; i++) {
+                        finalDetectionList.push({ 
+                            class: cls, 
+                            confidence: 0.9, 
+                            box: null 
+                        });
+                    }
+                });
             }
 
-            console.log("[AI Raw JSON]:", jsonStr); // Debug xem chuỗi cuối cùng là gì
-
-            const resultData = JSON.parse(jsonStr);
-            
-            // 2. Map dữ liệu sang format FE cần (List detection objects)
-            const finalDetectionList = [];
-            Object.keys(resultData).forEach(cls => {
-                const count = parseInt(resultData[cls]);
-                for(let i=0; i < count; i++) {
-                    finalDetectionList.push({
-                        class: cls, // Ví dụ: "chair-good"
-                        confidence: 0.99, 
-                        box: [0,0,0,0]
-                    });
-                }
-            });
-
-            // 3. Cập nhật vào DB
+            // Lưu vào DB
             await scanRepository.updateResult(
               scanId, 
               'completed', 
               JSON.stringify(finalDetectionList), 
               finalDetectionList.length
             );
-            console.log(`[AI] Thành công! Đã lưu ${finalDetectionList.length} vật thể.`);
+            console.log(`[AI] Hoàn tất. Tìm thấy ${finalDetectionList.length} vật thể.`);
           } else {
-             console.error("[AI Error] Output không chứa JSON hợp lệ. Raw data:\n", dataString);
-             throw new Error("Không tìm thấy JSON output từ Python");
+             console.error("[AI Error] Không tìm thấy JSON marker (RAW_JSON_START). Output có thể bị lỗi.");
+             console.error("Raw Output:", dataString); // In ra để debug nếu cần
+             throw new Error("Output format invalid");
           }
         } catch (err) {
           console.error("[AI Parse Error]", err.message);
           await scanRepository.updateResult(scanId, 'failed', null, 0);
         }
       } else {
-        console.error(`[AI] Python process thoát với mã lỗi ${code}`);
+        console.error(`[AI] Process thoát với mã lỗi ${code}`);
         await scanRepository.updateResult(scanId, 'failed', null, 0);
       }
     });

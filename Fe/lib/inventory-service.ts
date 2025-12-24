@@ -14,6 +14,8 @@ export interface Asset {
   lastScanned?: string
   condition: number
   description?: string
+  evidence_url?: string; // Thêm
+  evidence_bbox?: any;   // Thêm
 }
 
 export interface CreateAssetPayload {
