@@ -34,5 +34,15 @@ router.get("/reports/issues", authGuard(), async (req, res, next) => {
   }
 });
 
+// API lấy số liệu Dashboard
+router.get("/reports/dashboard", async (req, res) => {
+  try {
+    const stats = await reportService.getDashboardStats();
+    res.json(stats);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
 

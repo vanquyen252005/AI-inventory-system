@@ -1,5 +1,52 @@
 const { query } = require("../config/db");
 
+async function getDashboardStats() {
+    try {
+      // 1. Tổng số tài sản
+      // [SỬA] Dùng query() thay vì db.query()
+      const totalAssetsQuery = await query('SELECT COUNT(*) FROM assets');
+      const totalAssets = parseInt(totalAssetsQuery.rows[0].count);
+
+      // 2. Tổng giá trị tài sản (Xử lý null bằng COALESCE)
+      const totalValueQuery = await query('SELECT COALESCE(SUM(value), 0) FROM assets');
+      const totalValue = parseInt(totalValueQuery.rows[0].coalesce);
+
+      // 3. Thống kê theo trạng thái (Active, Maintenance...)
+      const statusQuery = await query(`
+        SELECT status, COUNT(*) as count 
+        FROM assets 
+        GROUP BY status
+      `);
+      
+      // Chuyển array thành object { active: 10, maintenance: 2 ... }
+      const statusCounts = { active: 0, maintenance: 0, inactive: 0 };
+      statusQuery.rows.forEach(row => {
+        if(statusCounts[row.status] !== undefined) {
+             statusCounts[row.status] = parseInt(row.count);
+        }
+      });
+
+      // 4. Lấy 5 lần quét gần nhất
+      const recentScansQuery = await query(`
+        SELECT id, scan_code, status, scanned_at as created_at, location 
+        FROM scans 
+        ORDER BY created_at DESC 
+        LIMIT 5
+      `);
+
+      return {
+        totalAssets,
+        totalValue,
+        statusCounts,
+        recentScans: recentScansQuery.rows
+      };
+
+    } catch (error) {
+      console.error("Dashboard Stats Error:", error);
+      throw new Error("Lỗi lấy dữ liệu thống kê");
+    }
+}
+
 async function getSummary() {
   // 1. Tổng số lượt quét AI
   const scansResult = await query("SELECT COUNT(*) as total FROM scans");
@@ -12,7 +59,7 @@ async function getSummary() {
   // 3. Số tài sản cần bảo trì (status = maintenance HOẶC condition < 50%)
   const maintenanceResult = await query(
     `SELECT COUNT(*) as total FROM assets 
-     WHERE status = 'maintenance' OR condition < 50`
+      WHERE status = 'maintenance' OR condition < 50`
   );
   const maintenanceCount = parseInt(maintenanceResult.rows[0].total, 10);
 
@@ -64,6 +111,7 @@ async function getIssueDistribution() {
 }
 
 module.exports = {
+  getDashboardStats,
   getSummary,
   getTrends,
   getIssueDistribution,

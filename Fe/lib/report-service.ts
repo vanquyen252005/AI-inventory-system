@@ -19,6 +19,26 @@ export interface DistributionData {
   value: number
 }
 
+export interface DashboardStats {
+  totalAssets: number;
+  totalValue: number;
+  statusCounts: {
+    active: number;
+    maintenance: number;
+    inactive: number;
+  };
+  recentScans: {
+    id: string;
+    scan_code: string;
+    status: string;
+    location: string;
+    created_at: string;
+  }[];
+}
+export const getDashboardStats = async (): Promise<DashboardStats> => {
+  return fetchWithAuth (`${INVENTORY_API_URL}/reports/dashboard`);
+
+};
 export async function getSummary(): Promise<SummaryStats> {
   return fetchWithAuth(`${INVENTORY_API_URL}/reports/summary`)
 }
