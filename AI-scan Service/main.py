@@ -11,7 +11,7 @@ from ultralytics import YOLO
 # CẤU HÌNH & THAM SỐ
 # ======================
 INPUT_PATH = "uet24.12.mp4"       
-MODEL_PATH = "run/ban2/best.pt"   
+MODEL_PATH = "run/ban5/best.pt"   
 OUTPUT_DIR = "output_results"
 
 # Các tham số lọc nhiễu
