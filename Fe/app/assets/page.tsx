@@ -12,6 +12,10 @@ import { useState, useEffect, useMemo } from "react"
 import { AssetFormDialog, ASSET_CATEGORIES } from "@/components/asset-form-dialog"
 import { getAssets, deleteAsset, updateAsset, type Asset } from "@/lib/inventory-service"
 import { cn } from "@/lib/utils"
+import { useRef } from "react" // Thêm useRef
+import { useReactToPrint } from "react-to-print" // Thêm hook in ấn
+import { Printer } from "lucide-react" // Thêm icon máy in
+import { AssetPrintTemplate } from "@/components/asset-print-template"
 
 // --- CONSTANTS ---
 const ROOMS_BY_HALL: Record<string, string[]> = {
@@ -59,6 +63,12 @@ export default function AssetsPage() {
   
   const [moveHall, setMoveHall] = useState("G2")   
   const [moveRoom, setMoveRoom] = useState("")     
+  
+  const printComponentRef = useRef<HTMLDivElement>(null);
+  const handlePrint = useReactToPrint({
+    contentRef: printComponentRef,
+    documentTitle: `Danh_sach_tai_san_${selectedRoom?.roomName}`,
+  });
 
   // --- FETCH DATA ---
   useEffect(() => {
@@ -378,11 +388,24 @@ export default function AssetsPage() {
                          {selectedRoom.fullLocation} • Tổng: <span className="font-semibold">{new Intl.NumberFormat('vi-VN').format(selectedRoom.totalValue)} ₫</span>
                       </p>
                    </div>
-                   <Button variant="ghost" size="icon" onClick={() => setSelectedRoom(null)} className="h-9 w-9 rounded-full hover:bg-slate-200">
-                      <X className="w-5 h-5" />
-                   </Button>
-                </DialogHeader>
+                   <div className="flex items-center gap-2">
+                      {/* NÚT IN TEM - MỚI THÊM */}
+                      <Button variant="outline" onClick={handlePrint} className="gap-2 border-slate-300 text-slate-700 hover:bg-white hover:text-blue-600">
+                          <Printer className="w-4 h-4" /> In tem nhãn
+                      </Button>
 
+                      <Button variant="ghost" size="icon" onClick={() => setSelectedRoom(null)} className="h-9 w-9 rounded-full hover:bg-slate-200">
+                          <X className="w-5 h-5" />
+                      </Button>
+                    </div>
+                </DialogHeader>
+                <div style={{ display: "none" }}>
+                    <AssetPrintTemplate 
+                        ref={printComponentRef} 
+                        roomName={selectedRoom.roomName} 
+                        assets={selectedRoom.assets} 
+                    />
+                </div>
                 <ScrollArea className="flex-1 p-0">
                   <table className="w-full text-sm text-left">
                      <thead className="bg-slate-50/80 backdrop-blur text-xs uppercase text-slate-500 font-semibold sticky top-0 z-10 shadow-sm">
